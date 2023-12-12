@@ -357,35 +357,25 @@ class DataType(metaclass=abc.ABCMeta):
 
     def get_residuals(self, samp_i, fit_func, params):
         residuals = fit_func(self.get_independent_data(), params) - self.get_samples()[samp_i,:]
-        '''
         if fit_func.num_priors:
-            priored_residuals = fit_func.get_priored_residuals(params)
-            residuals = np.concatenate(residuals, priored_residuals)
-        '''
+            priored_residuals = fit_func.get_priored_residuals(params, samp_i)
+            residuals = np.concatenate((residuals, priored_residuals))
 
         return residuals
 
     def get_weighted_residuals(self, samp_i, fit_func, params):
         cov_chol_lower = self._cov_chol_lower
-        '''
         if fit_func.num_priors:
-            priored_cov_chol_lower = np.zeros((cov_chol_lower.shape[0]+len(fit_func.num_priors),
-                                              cov_chol_lower.shape[1]+len(fit_func.num_priors)), dtype=np.float64)
+            priored_cov_chol_lower = np.zeros((cov_chol_lower.shape[0]+fit_func.num_priors,
+                                              cov_chol_lower.shape[1]+fit_func.num_priors), dtype=np.float64)
             priored_cov_chol_lower[:cov_chol_lower.shape[0],:cov_chol_lower.shape[1]] = cov_chol_lower
-            for prior in priors:
-                priored_sdevs = fit_func.get_priored_sdevs(params)
-                for pi in range(fit_func.num_priors):
-                    priored_cov_chol_lower[cov_chol_lower.shape[0]+pi, cov_chol_lower.shape[1]+pi] = priored_sdevs[pi]
+            priored_sdevs = fit_func.get_priored_sdevs(params)
+            for pi in range(fit_func.num_priors):
+                priored_cov_chol_lower[cov_chol_lower.shape[0]+pi, cov_chol_lower.shape[1]+pi] = priored_sdevs[pi]
 
             cov_chol_lower = priored_cov_chol_lower
-        '''
 
         residuals = self.get_residuals(samp_i, fit_func, params)
-        '''
-        if fit_func.num_priors:
-            priored_residuals = fit_func.get_priored_residuals(params)
-            residuals = np.concatenate(residuals, priored_residuals)
-        '''
 
         return scipy.linalg.solve_triangular(cov_chol_lower, residuals, lower=True, check_finite=False)
 
@@ -430,14 +420,16 @@ class MultiDataType(DataType):
         for data_type in self._data_types:
             indep_data_list.append(data_type.get_independent_data())
 
-        return np.concatenate(indep_data_list)
+        #return np.concatenate(indep_data_list)
+        return indep_data_list
 
     def get_organized_independent_data(self):
         indep_data_list = list()
         for data_type in self._data_types:
             indep_data_list.append(data_type.get_organized_independent_data())
 
-        return np.concatenate(indep_data_list)
+        #return np.concatenate(indep_data_list)
+        return indep_data_list
 
 
 class Prior:
@@ -467,7 +459,7 @@ class Prior:
         if hasattr(self, '_sdev'):
             return self._scale * self._sdev
         else:
-            return self._scale * prior.sdev
+            return self._scale * self._samples.sdev
 
     def get_prior(self, samp_i):
         if hasattr(self, '_mean'):
@@ -475,10 +467,17 @@ class Prior:
         else:
             return self._samples.samples[samp_i]
 
+    def gvar(self):
+        return gv.gvar(self.mean, self.sdev)
+
+    def __str__(self):
+        return str(self.gvar())
+
 
 
 class FitFunction(metaclass=abc.ABCMeta):
 
+    _init_guesses = dict()
     _priors = dict()
 
     @property
@@ -495,13 +494,25 @@ class FitFunction(metaclass=abc.ABCMeta):
     def num_params(self):
         return len(self.params)
 
-    def add_priors(self, priors):
-        for param, prior in priors.items():
-            _priors[param] = prior
+    @property
+    def init_guesses(self):
+        return self._init_guesses
+
+    @init_guesses.setter
+    def init_guesses(self, in_init_guesses):
+        self._init_guesses = in_init_guesses
 
     @property
     def priors(self):
         return self._priors
+
+    @priors.setter
+    def priors(self, in_priors):
+        self._priors = in_priors
+
+    def add_priors(self, priors):
+        for param, prior in priors.items():
+            self._priors[param] = prior
 
     @property
     def num_priors(self):
@@ -525,7 +536,7 @@ class FitFunction(metaclass=abc.ABCMeta):
         else:
             raise TypeError("Invalid parameters to FitFunction")
 
-    def get_priored_residuals(p, samp_i=0):
+    def get_priored_residuals(self, p, samp_i=0):
         priored_residuals = np.zeros((self.num_priors,), dtype=np.float64)
         if type(p) is dict:
             for pi, (param, prior) in enumerate(self.priors.items()):
@@ -533,14 +544,33 @@ class FitFunction(metaclass=abc.ABCMeta):
 
         elif isinstance(p, np.ndarray) or type(p) is list:
             prior_i = 0
-            for parami, param in enumerate(self.params):
+            for param_i, param in enumerate(self.params):
                 if param in self.priors:
-                    priored_residuals[prior_i] = p[parami] - self.priors[param].get_prior(samp_i)
+                    priored_residuals[prior_i] = p[param_i] - self.priors[param].get_prior(samp_i)
+                    prior_i += 1
 
         else:
             raise TypeError("Invalid parameters to FitFunction")
 
         return priored_residuals
+
+    def get_priored_sdevs(self, p):
+        priored_sdevs = np.zeros((self.num_priors,), dtype=np.float64)
+        if type(p) is dict:
+            for pi, (param, prior) in enumerate(self.priors.items()):
+                priored_sdevs[pi] = prior.sdev
+
+        elif isinstance(p, np.ndarray) or type(p) is list:
+            prior_i = 0
+            for param_i, param in enumerate(self.params):
+                if param in self.priors:
+                    priored_sdevs[prior_i] = self.priors[param].sdev
+                    prior_i += 1
+
+        else:
+            raise TypeError("Invalid parameters to FitFunction")
+
+        return priored_sdevs
 
 
 class MultiFitFunction(FitFunction):
@@ -560,13 +590,35 @@ class MultiFitFunction(FitFunction):
     def params(self):
         _params = list()
         for fit_func in self.fit_functions:
-            _params.extend(fit_func.params)
+            for param in fit_func.params:
+                if param not in _params:
+                    _params.append(param)
 
         return _params
 
     @property
-    def num_params(self):
-        return sum([func.num_params for func in self.fit_functions])
+    def init_guesses(self):
+        if not self._init_guesses:
+            for fit_func in self.fit_functions:
+                for param, guess in fit_func.init_guesses.items():
+                    if param in self._init_guesses and guess != self._init_guesses[param]:
+                        print(f"Warning: conflicthing init guess for param {param}")
+
+                    self._init_guesses[param] = guess
+
+        return self._init_guesses
+
+    @property
+    def priors(self):
+        if not self._priors:
+            for fit_func in self.fit_functions:
+                for param, prior in fit_func.priors.items():
+                    if param in self._pirors and prior != self._priors[param]:
+                        print(f"Warning: conflicthing prior for param {param}")
+
+                    self._priors[param] = prior
+
+        return self._priors
 
     @property
     def fit_functions(self):
@@ -575,13 +627,6 @@ class MultiFitFunction(FitFunction):
     @property
     def num_functions(self):
         return len(self.fit_functions)
-
-    @property
-    def num_priors(self):
-        return sum([func.num_priors for func in self.fit_functions])
-
-    def add_priors(self, priors):
-        raise TypeError("Add priors to individual fit functions")
 
     def function(self, x, p):
         """
@@ -600,17 +645,45 @@ class MultiFitFunction(FitFunction):
         return func_results
 
     def __call__(self, x, p):
-        return self.function(x, p)
+        #return self.function(x, p)
+        return self.test_function(x, p)
 
     def get_combined_fit_function(self, input_data):
         def combined_fit_function(x, p):
-            start_i = 0
+            x_start_i = 0
             function_values = np.zeros(input_data.num_data)
             for data_type, fit_func in zip(input_data.data_types, self.fit_functions):
-                function_values[start_i:start_i+data_type.num_data] += \
-                    fit_func(x[start_i:start_i+data_type.num_data], p[start_i:start_i+data_type.num_data])
-                start_i += data_type.num_data
+                param_values = list()
+                for param in fit_func.params:
+                    param_values.append(p[self.params.index(param)])
+
+                function_values[x_start_i:x_start_i+data_type.num_data] += fit_func(x[x_start_i:x_start_i+data_type.num_data], param_values)
+                x_start_i += data_type.num_data
 
             return function_values
 
         return combined_fit_function
+
+
+    def test_function(self, x, p):
+        """
+        Args:
+          x: list of size of self.fit_functions
+          p: list of param values
+
+        Return:
+          list of size equal to total elements in x
+        """
+
+        x_start_i = 0
+        function_values = np.zeros(sum([d.size for d in x]))
+        for data, fit_func in zip(x, self.fit_functions):
+            param_values = list()
+            for param in fit_func.params:
+                param_values.append(p[self.params.index(param)])
+
+            function_values[x_start_i:x_start_i+len(data)] = fit_func(data, param_values)
+            x_start_i += len(data)
+
+        return function_values
+

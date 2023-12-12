@@ -15,7 +15,8 @@ import matplotlib.pyplot as plt
 plt.style.use('/home/ahanlon/code/lattice/qcd_analysis/plots.mplstyle')
 
 import data_handler
-import lsqfit_fitter as fitter
+#import lsqfit_fitter as fitter
+import fitter
 
 
 q_colors = {
@@ -444,8 +445,8 @@ def get_fit_function(num_states):
         f = 1.
         for i in range(1, num_states):
             fi = p[f'R{i}']
-            for j in range(1, i+1):
-                fi *= gv.exp(-p[f'dE{j},{j-1}']*x)
+            for j in range(i):
+                fi *= gv.exp(-p[f'dE{j+1},{j}']*x)
             f += fi
         f *= p['A0']*gv.exp(-p['E0']*x)
         return f
@@ -518,11 +519,220 @@ class C2ptModel(data_handler.FitFunction):
         f = 1.
         for i in range(1, self.num_states):
             fi = p[f'R{i}']
-            for j in range(1, i+1):
-                fi *= np.exp(-p[f'dE{j},{j-1}']*x)
+            for j in range(i):
+                fi *= np.exp(-p[f'dE{j+1},{j}']*x)
             f += fi
         f *= p['A0']*np.exp(-p['E0']*x)
         return f
+
+
+    def get_init_guesses(self, c2pt_data, tsep):
+        init_guesses_dict = dict()
+
+        eff_energy = c2pt_data.get_effective_energy(1)[tsep + 0.5]
+        init_guesses_dict['E0'] = eff_energy.mean
+
+        eff_amp = np.exp(eff_energy*tsep) * c2pt_data(tsep).real
+        init_guesses_dict['A0'] = eff_amp.mean
+
+        for param in self.params:
+            if param == 'E0' or param == 'A0':
+                continue
+
+            init_guesses_dict[param] = .1
+
+        return init_guesses_dict
+                
+
+
+
+class C2ptSingleHadronConspiracyModel(data_handler.FitFunction):
+
+    def __init__(self, num_single_hadron_states, particle=''):
+        self.num_single_hadron_states = num_single_hadron_states
+        self.particle = particle
+
+    @property
+    def fit_name(self):
+        return f"single-hadron-conspiracy_{self.num_single_hadron_states}-exp-single-hadron{self.particle}"
+
+    @property
+    def particle_str(self):
+        if self.particle:
+            return f"({self.particle})"
+        else:
+            return self.particle
+
+    @property
+    def params(self):
+        _params = [f'E{self.particle_str}0']
+        for i in range(1, self.num_single_hadron_states):
+            _params.append(f'DE{self.particle_str}{i},{i-1}')
+
+        _params.append(f'A{self.particle_str}0')
+        for i in range(1, self.num_single_hadron_states):
+            _params.append(f'r{self.particle_str}{i}')
+
+        return _params
+
+
+    def function(self, x, p):
+        f = 1.
+        for i in range(1, self.num_single_hadron_states):
+            fi = p[f'r{self.particle_str}{i}']
+            for j in range(i):
+                fi *= np.exp(-p[f'DE{self.particle_str}{j+1},{j}']*x)
+            f += fi
+        f *= p[f'A{self.particle_str}0']*np.exp(-p[f'E{self.particle_str}0']*x)
+        return f
+
+
+    def get_init_guesses(self, c2pt_data, tsep):
+        init_guesses_dict = dict()
+
+        eff_energy = c2pt_data.get_effective_energy(1)[tsep + 0.5]
+        init_guesses_dict[f'E{self.particle_str}0'] = eff_energy.mean
+
+        eff_amp = np.exp(eff_energy*tsep) * c2pt_data(tsep).real
+        init_guesses_dict[f'A{self.particle_str}0'] = eff_amp.mean
+
+        for param in self.params:
+            if param == f'E{self.particle_str}0' or param == f'A{self.particle_str}0':
+                continue
+
+            init_guesses_dict[param] = .1
+
+        return init_guesses_dict
+
+
+class C2ptTwoHadronConspiracyModel(data_handler.FitFunction):
+
+    def __init__(self, num_single_hadron_states, degenerate=False):
+        self.num_single_hadron_states = num_single_hadron_states
+        self.degenerate = degenerate
+
+    @property
+    def fit_name(self):
+        if self.degenerate:
+            return f"two-hadron-conspiracy_{self.num_single_hadron_states}-exp-deg-single-hadron"
+        else:
+            return f"two-hadron-conspiracy_{self.num_single_hadron_states}-exp-single-hadron"
+
+    @property
+    def params(self):
+        if self.degenerate:
+            _params = []
+            for i in range(self.num_single_hadron_states):
+                for j in range(i+1):
+                    _params.append(f'dE{i},{j}')
+
+            _params.append('E0')
+            for i in range(1, self.num_single_hadron_states):
+                _params.append(f'DE{i},{i-1}')
+
+            _params.append('A0,0')
+            for i in range(1, self.num_single_hadron_states):
+                for j in range(i+1):
+                    _params.append(f'r{i},{j}')
+
+        else:
+            _params = []
+            for i in range(self.num_single_hadron_states):
+                for j in range(self.num_single_hadron_states):
+                    _params.append(f'dE{i},{j}')
+
+            _params.append('E(1)0')
+            _params.append('E(2)0')
+            for i in range(1, self.num_single_hadron_states):
+                _params.append(f'DE(1){i},{i-1}')
+                _params.append(f'DE(2){i},{i-1}')
+
+            _params.append('A0,0')
+            for i in range(self.num_single_hadron_states):
+                for j in range(self.num_single_hadron_states):
+                    if i == 0 and j == 0:
+                        continue
+                    _params.append(f'r{i},{j}')
+
+        return _params
+
+
+    def function(self, x, p):
+        f = 0.
+
+        for i1 in range(self.num_single_hadron_states):
+            for i2 in range(self.num_single_hadron_states):
+                if i1 == 0 and i2 == 0:
+                    f += 1.
+                else:
+                    if self.degenerate:
+                        if i1 > i2:
+                            fi = p[f'r{i1},{i2}']*np.exp(-p[f'dE{i1},{i2}'])
+                        else:
+                            fi = p[f'r{i2},{i1}']*np.exp(-p[f'dE{i2},{i1}'])
+                    else:
+                        fi = p[f'r{i1},{i2}']*np.exp(-p[f'dE{i1},{i2}'])
+
+                    for i in range(i1):
+                        if self.degenerate:
+                            fi *= np.exp(-p[f'DE{i+1},{i}']*x)
+                        else:
+                            fi *= np.exp(-p[f'DE(1){i+1},{i}']*x)
+                    for i in range(i2):
+                        if self.degenerate:
+                            fi *= np.exp(-p[f'DE{i+1},{i}']*x)
+                        else:
+                            fi *= np.exp(-p[f'DE(2){i+1},{i}']*x)
+                    f += fi
+
+        if self.degenerate:
+            f *= p['A0,0']*np.exp(-(2.*p['E0'] + p['dE0,0'])*x)
+        else:
+            f *= p['A0,0']*np.exp(-(p['E(1)0'] + p['E(2)0'] + p['dE0,0'])*x)
+
+        return f
+
+    def get_init_guesses(self, c2pt_interacting, c2pt_noninteracting1, c2pt_noninteracting2):
+        """
+        Args: c2pt_interacting - 2-tuple: First element is data for interacting correlators.
+                                          Second element is tsep value to use
+              c2pt_noninteracting1 - 2-tuple: Same as above but for first particle
+              c2pt_noninteracting2 - 2-tuple: Same as above but for second particle
+        """
+        init_guesses_dict = dict()
+        ignore_params = list()
+
+        # get amplitude of interacting correlators
+        eff_energy = c2pt_interacting[0].get_effective_energy(1)[c2pt_interacting[1] + 0.5]
+        eff_amp = np.exp(eff_energy*c2pt_interacting[1]) * c2pt_interacting[0](c2pt_interacting[1]).real
+        init_guesses_dict['A0,0'] = eff_amp.mean
+        ignore_params.append('A0,0')
+
+        # get effecitve energy from particles
+        eff_energy1 = c2pt_noninteracting1[0].get_effective_energy(1)[c2pt_noninteracting1[1] + 0.5]
+        if self.degenerate:
+            init_guesses_dict['E0'] = eff_energy1.mean
+            ignore_params.append('E0')
+        else:
+            eff_energy2 = c2pt_noninteracting2[0].get_effective_energy(1)[c2pt_noninteracting2[1] + 0.5]
+            init_guesses_dict['E(1)0'] = eff_energy1.mean
+            init_guesses_dict['E(2)0'] = eff_energy2.mean
+            ignore_params.append('E(1)0')
+            ignore_params.append('E(2)0')
+
+        # get interacting shift
+        c2pt_ratio = c2pt_interacting[0].get_ratio_correlator([c2pt_noninteracting1[0], c2pt_noninteracting2[0]])
+        eff_energy = c2pt_ratio.get_effective_energy(1)[c2pt_interacting[1] + 0.5]
+        init_guesses_dict['dE0,0'] = eff_energy.mean
+        ignore_params.append('dE0,0')
+
+        for param in self.params:
+            if param in ignore_params:
+                continue
+
+            init_guesses_dict[param] = .1
+
+        return init_guesses_dict
 
 
 ###################################################################################################
@@ -805,7 +1015,13 @@ class C2ptMatrixData:
         elif mean:
             t0_i = self.tseps.index(t0)
             td_i = self.tseps.index(td)
-            _, eigvecs = scipy.linalg.eigh(self._raw_corr_mat[:, :, td_i, 0], self._raw_corr_mat[:, :, t0_i, 0])
+            Ct0_mean = self._raw_corr_mat[:, :, t0_i, 0]
+            Ctd_mean = self._raw_corr_mat[:, :, td_i, 0]
+
+            if not scipy.linalg.ishermitian(Ct0_mean) or not scipy.linalg.ishermitian(Ctd_mean):
+                raise ValueError("Matrices must be Hermitian")
+
+            _, eigvecs = scipy.linalg.eigh(Ctd_mean, Ct0_mean)
             eigvecs_mean = np.repeat(eigvecs[:, :, np.newaxis], len(self.tseps), axis=2)
             eigvecs = np.repeat(eigvecs_mean[:, :, :, np.newaxis], data_handler.get_num_samples()+1, axis=3)
 
@@ -898,6 +1114,78 @@ class C2ptMatrixData:
 
         return np.array(overlap_list)
 
+    def get_principal_correlators_from_ev(self, t0, td, mean):
+        """
+        Args:
+            t0 (int) - required, the metric time
+            td (int) - optional, the diagonalization time. If missing, diagonalize at all times
+            mean (bool) - optional. If True, only gevp on the mean is done. If False, gevp on
+                          all resamplings is done
+
+        Returns:
+            C2ptMatrixData - contains the rotated correlators
+
+        TODO:
+            No eigenvector pinning is implemented, so one should only use the defaults
+        """
+        if mean and td is None:
+            ...
+
+        elif mean:
+            t0_i = self.tseps.index(t0)
+            td_i = self.tseps.index(td)
+
+            Ct0_mean = self._raw_corr_mat[:, :, t0_i, 0]
+            Ctd_mean = self._raw_corr_mat[:, :, td_i, 0]
+
+            if not scipy.linalg.ishermitian(Ct0_mean) or not scipy.linalg.ishermitian(Ctd_mean):
+                raise ValueError("Matrices must be Hermitian")
+
+            Ct0_eigvals_mean, Ct0_eigvecs_mean = scipy.linalg.eigh(Ct0_mean)
+            Ct0_eigvecs_tseps_mean = np.repeat(Ct0_eigvecs_mean[:, :, np.newaxis], len(self.tseps), axis=2)
+            Ct0_eigvecs_tseps_samps = np.repeat(Ct0_eigvecs_tseps_mean[:, :, :, np.newaxis], data_handler.get_num_samples()+1, axis=3)
+
+            Ct0_1h_eigvals_mean = np.sqrt(Ct0_eigvals_mean)
+            Ct0_1h_eigvals_samps = np.repeat(Ct0_1h_eigvals_mean[:, np.newaxis], data_handler.get_num_samples()+1, axis=1)
+
+            Ct0_inv1h_eigvals_mean = 1./Ct0_1h_eigvals_mean
+            Ctd_rot_mean = np.einsum('ij,jk,kl->il', Ct0_eigvecs_mean.conj().T, Ctd_mean, Ct0_eigvecs_mean)
+            Gt_mean = np.einsum('i,ij,j->ij', Ct0_inv1h_eigvals_mean, Ctd_rot_mean, Ct0_inv1h_eigvals_mean)
+            Gt_eigvals_mean, Gt_eigvecs_mean = scipy.linalg.eigh(Gt_mean)
+            Gt_eigvecs_tseps_mean = np.repeat(Gt_eigvecs_mean[:, :, np.newaxis], len(self.tseps), axis=2)
+            Gt_eigvecs_tseps_samps = np.repeat(Gt_eigvecs_tseps_mean[:, :, :, np.newaxis], data_handler.get_num_samples()+1, axis=3)
+
+            Rot_mean = np.einsum('ij,j,jk->ik', Ct0_eigvecs_mean, Ct0_inv1h_eigvals_mean, Gt_eigvecs_mean)
+            Rot_tseps_mean = np.repeat(Rot_mean[:, :, np.newaxis], len(self.tseps), axis=2)
+            Rot_tseps_samps = np.repeat(Rot_tseps_mean[:, :, :, np.newaxis], data_handler.get_num_samples()+1, axis=3)
+
+
+        elif td is None:
+            ...
+
+        else:
+            ...
+        
+        self._Ct0_eigenvectors = Ct0_eigvecs_tseps_samps
+        self._G_eigenvectors = Gt_eigvecs_tseps_samps
+
+        principal_corrs_raw = self.rotate_raw(Rot_tseps_samps)
+        principal_corrs = np.empty((self.N, self.N), dtype=object)
+        for n_i in range(self.N):
+            for n_j in range(self.N):
+                c2pt_data_dict = dict()
+                for ts_i, ts in enumerate(self.tseps):
+                    c2pt_data_dict[ts] = data_handler.Data(principal_corrs_raw[n_i, n_j, ts_i, :])
+
+                principal_corrs[n_i, n_j] = C2ptData(c2pt_data_dict)
+
+        return C2ptMatrixData(principal_corrs)
+
+    @property
+    def G_eigenvectors(self):
+        if hasattr(self, '_G_eigenvectors'):
+            return self._G_eigenvectors
+        return None
 
     def __call__(self, row, col):
         return self._corr_mat[row,col]

@@ -29,6 +29,10 @@ class RenormalizationData(data_handler.DataType):
         self._data = data
         self.Ns = Ns
 
+    @property
+    def data_name(self):
+        return "renorm"
+
     def get_samples(self):
         _samples = list()
         for renorm_data in self._data.values():

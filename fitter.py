@@ -20,9 +20,8 @@ def release_shared_data(name):
     shm.unlink()
 
 def fit_sample(samp_i, fit_data_sh, input_data, fit_function, init_guesses):
-    comb_fit_function = fit_function.get_combined_fit_function(input_data)
     data_shape = (input_data.num_samples+1, len(init_guesses))
-    residuals_func = input_data.get_weighted_residuals_func(samp_i, comb_fit_function)
+    residuals_func = input_data.get_weighted_residuals_func(samp_i, fit_function)
     fit_result = scipy.optimize.least_squares(residuals_func, init_guesses)
     fit_data = np.ndarray(shape=data_shape, dtype=np.float64, buffer=fit_data_sh.buf)
     fit_data[samp_i,:] = fit_result.x
@@ -43,19 +42,19 @@ class Fitter:
 
         if type(input_data) is list:
             self.input_data = data_handler.MultiDataType(input_data)
+        elif isinstance(input_data, data_handler.MultiDataType):
+            self.input_data = input_data
         elif isinstance(input_data, data_handler.DataType):
             self.input_data = data_handler.MultiDataType([input_data])
-        elif type(input_data) is data_handler.MultiDataType:
-            self.input_data = input_data
         else:
             raise TypeError("Invalid input_data passed to fitter.Fitter")
 
         if type(fit_function) is list:
             self.fit_function = data_handler.MultiFitFunction(fit_function)
+        elif isinstance(fit_function, data_handler.MultiFitFunction):
+            self.fit_function = fit_function
         elif isinstance(fit_function, data_handler.FitFunction):
             self.fit_function = data_handler.MultiFitFunction([fit_function])
-        elif type(fit_function) is data_handler.MultiFitFunction:
-            self.fit_function = fit_function
         else:
             raise TypeError("Invalid fit_function passed to fitter.Fitter")
 
@@ -64,14 +63,8 @@ class Fitter:
             raise ValueError("Mismatch in size of input_data and fit_function passed to fitter.Fitter")
 
 
-    def do_fit(self, init_guesses):
+    def do_fit(self):
         """
-        Args:
-          init_guesses - list[dict{str: float}] or dict{str: float}:
-              If a list, each element corresponds to one of the fit functions. The number of
-              fit_functions (and therefore data types) must match the size of the list.
-              If init_guesses is a dict, then it will be treated like a one element list
-
         Returns:
           bool: True if fit is successful, otherwise False
         """
@@ -88,18 +81,9 @@ class Fitter:
 
         self.input_data.set_covariance()
 
-        # construct init_guesses
-        if type(init_guesses) is dict:
-            init_guesses = [init_guesses]
-
-        if len(init_guesses) != self.input_data.num_data_types:
-            print("Mismatch in size of init_guesses and input_data")
-            return False
-
         init_guesses_flat = list()
-        for init_guess, fit_func in zip(init_guesses, self.fit_function.fit_functions):
-            for param in fit_func.params:
-                init_guesses_flat.append(init_guess[param])
+        for param in self.fit_function.params:
+            init_guesses_flat.append(self.init_guesses[param])
 
         # construct result data structures
         data_shape = (self.input_data.num_samples+1, len(init_guesses_flat))
@@ -122,14 +106,9 @@ class Fitter:
 
         # get results
         fit_data = np.copy(np.ndarray(shape=data_shape, dtype=np.float64, buffer=fit_data_sh.buf))
-        self._params = list()
-        param_i = 0
-        for fit_func in self.fit_function.fit_functions:
-            fit_params = dict()
-            for param in fit_func.params:
-                fit_params[param] = data_handler.Data(fit_data[:,param_i])
-                param_i += 1
-            self._params.append(fit_params)
+        self._params = dict()
+        for param_i, param in enumerate(self.fit_function.params):
+            self._params[param] = data_handler.Data(fit_data[:,param_i])
 
         release_shared_data(fit_data_sh.name)
 
@@ -144,10 +123,17 @@ class Fitter:
             _output += f"      logGBF = {round(self.logGBF, 2)}      w = {round(self.w, 2)}\n\n"
 
         _output += "Parameters:\n"
-        for data_type, fit_func, params in zip(self.input_data.data_types, self.fit_function.fit_functions, self.params):
+
+        for data_type, fit_func in zip(self.input_data.data_types, self.fit_function.fit_functions):
             _output += f"    Data: {data_type.data_name}, Fit function: {fit_func.fit_name}\n"
-            for param_name, param in params.items():
-                _output += f"        {param_name} = {param!s}\n"
+            for param in fit_func.params:
+                param_value = self.params[param]
+                init_guess = self.init_guesses[param]
+                _output += f"      {param : >10} {str(param_value) : >15}    [ {round(init_guess, 2) : >15} "
+                if param in self.fit_function.priors:
+                    _output += f", {str(self.fit_function.priors[param]) : >15} "
+                _output += "]\n"
+            _output += "\n"
 
         return _output
 
@@ -176,14 +162,18 @@ class Fitter:
         return None
 
     @property
+    def Q(self):
+        if hasattr(self, '_chi2') and hasattr(self, '_dof'):
+            Q = scipy.special.gammaincc(self.dof/2., self.chi2/2.)
+            return Q
+        return None
+
+    @property
     def params(self):
         if hasattr(self, '_params'):
             return self._params
         return None
 
     @property
-    def Q(self):
-        if hasattr(self, '_chi2') and hasattr(self, '_dof'):
-            Q = scipy.special.gammaincc(self.dof/2., self.chi2/2.)
-            return Q
-        return None
+    def init_guesses(self):
+        return self.fit_function.init_guesses
