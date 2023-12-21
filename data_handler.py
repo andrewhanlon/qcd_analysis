@@ -10,7 +10,7 @@ import scipy.linalg
 import matplotlib.pyplot as plt
 #plt.rc('font', family='serif', serif=['Times'], size=55)
 #plt.rc('text', usetex=True)
-plt.style.use('/home/ahanlon/code/lattice/qcd_analysis/plots.mplstyle')
+plt.style.use('/home/ahanlon/lattice_code/qcd_analysis/plots.mplstyle')
 
 
 class SamplingMode(enum.Enum):
@@ -477,9 +477,6 @@ class Prior:
 
 class FitFunction(metaclass=abc.ABCMeta):
 
-    _init_guesses = dict()
-    _priors = dict()
-
     @property
     @abc.abstractmethod
     def fit_name(self):
@@ -496,7 +493,9 @@ class FitFunction(metaclass=abc.ABCMeta):
 
     @property
     def init_guesses(self):
-        return self._init_guesses
+        if hasattr(self, '_init_guesses'):
+            return self._init_guesses
+        return dict()
 
     @init_guesses.setter
     def init_guesses(self, in_init_guesses):
@@ -504,7 +503,9 @@ class FitFunction(metaclass=abc.ABCMeta):
 
     @property
     def priors(self):
-        return self._priors
+        if hasattr(self, '_pirors'):
+            return self._priors
+        return dict()
 
     @priors.setter
     def priors(self, in_priors):
@@ -516,7 +517,9 @@ class FitFunction(metaclass=abc.ABCMeta):
 
     @property
     def num_priors(self):
-        return len(self._priors)
+        if hasattr(self, '_priors'):
+            return len(self._priors)
+        return 0
 
     @abc.abstractmethod
     def function(self, x, p):
@@ -598,6 +601,7 @@ class MultiFitFunction(FitFunction):
 
     @property
     def init_guesses(self):
+        '''
         if not self._init_guesses:
             for fit_func in self.fit_functions:
                 for param, guess in fit_func.init_guesses.items():
@@ -607,9 +611,21 @@ class MultiFitFunction(FitFunction):
                     self._init_guesses[param] = guess
 
         return self._init_guesses
+        '''
+
+        _init_guesses = dict()
+        for fit_func in self.fit_functions:
+            for param, guess in fit_func.init_guesses.items():
+                if param in _init_guesses and guess != _init_guesses[param]:
+                    print(f"Warning: conflicthing init guess for param {param}")
+
+                _init_guesses[param] = guess
+        
+        return _init_guesses
 
     @property
     def priors(self):
+        '''
         if not self._priors:
             for fit_func in self.fit_functions:
                 for param, prior in fit_func.priors.items():
@@ -619,6 +635,17 @@ class MultiFitFunction(FitFunction):
                     self._priors[param] = prior
 
         return self._priors
+        '''
+
+        _priors = dict()
+        for fit_func in self.fit_functions:
+            for param, prior in fit_func.priors.items():
+                if param in _pirors and prior != _priors[param]:
+                    print(f"Warning: conflicthing prior for param {param}")
+
+                _priors[param] = prior
+
+        return _priors
 
     @property
     def fit_functions(self):

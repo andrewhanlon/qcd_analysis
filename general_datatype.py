@@ -16,7 +16,7 @@ import matplotlib.ticker
 import matplotlib.pyplot as plt
 #plt.rc('font', family='serif', serif=['Times'], size=55)
 #plt.rc('text', usetex=True)
-plt.style.use('/home/ahanlon/code/lattice/qcd_analysis/plots.mplstyle')
+plt.style.use('/home/ahanlon/lattice_code/qcd_analysis/plots.mplstyle')
 
 import data_handler
 import lsqfit_fitter as fitter

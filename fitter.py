@@ -19,10 +19,10 @@ def release_shared_data(name):
     shm.close()
     shm.unlink()
 
-def fit_sample(samp_i, fit_data_sh, input_data, fit_function, init_guesses):
+def fit_sample(samp_i, fit_data_sh, input_data, fit_function, init_guesses, **kwargs):
     data_shape = (input_data.num_samples+1, len(init_guesses))
     residuals_func = input_data.get_weighted_residuals_func(samp_i, fit_function)
-    fit_result = scipy.optimize.least_squares(residuals_func, init_guesses)
+    fit_result = scipy.optimize.least_squares(residuals_func, init_guesses, **kwargs)
     fit_data = np.ndarray(shape=data_shape, dtype=np.float64, buffer=fit_data_sh.buf)
     fit_data[samp_i,:] = fit_result.x
     if samp_i == 0:
@@ -63,7 +63,7 @@ class Fitter:
             raise ValueError("Mismatch in size of input_data and fit_function passed to fitter.Fitter")
 
 
-    def do_fit(self):
+    def do_fit(self, **kwargs):
         """
         Returns:
           bool: True if fit is successful, otherwise False
@@ -91,7 +91,7 @@ class Fitter:
 
         # do fit
         with threadpoolctl.threadpool_limits(limits=1, user_api='blas'):
-            fit_results_mean = fit_sample(0, fit_data_sh, self.input_data, self.fit_function, init_guesses_flat)
+            fit_results_mean = fit_sample(0, fit_data_sh, self.input_data, self.fit_function, init_guesses_flat, **kwargs)
 
             self._chi2 = 2.*fit_results_mean.cost
             init_guesses_flat = fit_results_mean.x
@@ -129,9 +129,9 @@ class Fitter:
             for param in fit_func.params:
                 param_value = self.params[param]
                 init_guess = self.init_guesses[param]
-                _output += f"      {param : >10} {str(param_value) : >15}    [ {round(init_guess, 2) : >15} "
+                _output += f"      {param : >10} {str(param_value):>15}    [ {init_guess:>12.6f} "
                 if param in self.fit_function.priors:
-                    _output += f", {str(self.fit_function.priors[param]) : >15} "
+                    _output += f", {str(self.fit_function.priors[param]):>15} "
                 _output += "]\n"
             _output += "\n"
 

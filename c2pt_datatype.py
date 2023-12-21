@@ -12,7 +12,7 @@ import matplotlib.ticker
 import matplotlib.pyplot as plt
 #plt.rc('font', family='serif', serif=['Times'], size=55)
 #plt.rc('text', usetex=True)
-plt.style.use('/home/ahanlon/code/lattice/qcd_analysis/plots.mplstyle')
+plt.style.use('/home/ahanlon/lattice_code/qcd_analysis/plots.mplstyle')
 
 import data_handler
 #import lsqfit_fitter as fitter
@@ -800,6 +800,7 @@ def plot_multiple_dispersion(energies_dict, plot_file, Ns, a):
     plt.close()
 
 
+'''
 def plot_tmins(fit_results, param_name, ylabel, plot_file, yrange=None, include_w=False):
     if include_w:
         fig, [energy_ax, q_ax, w_ax] = plt.subplots(3, 1, sharex=True, gridspec_kw={'height_ratios': [4, 1, 1]})
@@ -857,7 +858,64 @@ def plot_tmins(fit_results, param_name, ylabel, plot_file, yrange=None, include_
 
     plt.savefig(plot_file)
     plt.close()
+'''
 
+
+def plot_tmins(fit_results, ylabel, plot_file, yrange=None, include_w=False):
+    if include_w:
+        fig, [energy_ax, q_ax, w_ax] = plt.subplots(3, 1, sharex=True, gridspec_kw={'height_ratios': [4, 1, 1]})
+    else:
+        fig, [energy_ax, q_ax] = plt.subplots(2, 1, sharex=True, gridspec_kw={'height_ratios': [4, 1]})
+
+    if yrange is not None:
+        energy_ax.set_ylim(yrange[0], yrange[1])
+
+    fig.subplots_adjust(hspace=0.)
+    plt.xlabel(r"$t_{\rm min} / a$")
+    energy_ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
+    q_ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
+    if include_w:
+        w_ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
+    energy_ax.set_ylabel(ylabel)
+    q_ax.set_ylabel(r"$Q$")
+    if include_w:
+        w_ax.set_ylabel(r"$w$")
+
+    num_fit_models = len(fit_results)
+    colors = plt.cm.rainbow(np.linspace(0, 1, num_fit_models))
+    disp = .33 * (num_fit_models - 1) / 10
+    displacements = np.linspace(-disp, disp, num_fit_models)
+
+    for plot_i, (fit_label, fits) in enumerate(fit_results.items()):
+        tmin_vals = list()
+        q_vals = list()
+        w_vals = list()
+        fit_vals = list()
+        fit_errs = list()
+
+        for fit in fits:
+            fit_param = fit.fit_result
+
+            tmin = fit.tmin
+            tmin_vals.append(tmin + displacements[plot_i])
+            q_vals.append(fit.Q)
+            #w_vals.append(fit.w)
+            fit_vals.append(fit_param.mean)
+            fit_errs.append(fit_param.sdev)
+
+        if len(fit_vals) == 0:
+            continue
+
+        energy_ax.errorbar(tmin_vals, fit_vals, yerr=fit_errs, marker='.', capsize=2, capthick=.5, elinewidth=.5, lw=.1, color=colors[plot_i], markerfacecolor='none', label=fit_label, ls='none')
+        q_ax.plot(tmin_vals, q_vals, marker='.', lw=.1, color=colors[plot_i], markerfacecolor='none', ls='none')
+        if include_w:
+            w_ax.plot(tmin_vals, w_vals, marker='.', lw=.1, color=colors[plot_i], markerfacecolor='none', ls='none')
+
+    energy_ax.legend()
+    plt.tight_layout(pad=0.80)
+
+    plt.savefig(plot_file)
+    plt.close()
 
 
 def plot_effective_energies(c2pt_datas, dt, plot_file, tmin=0, tmax=-1, tmax_rel_error=0.):
