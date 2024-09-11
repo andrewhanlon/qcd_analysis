@@ -1,5 +1,7 @@
+import h5py
 import numpy as np
 import scipy.optimize
+import scipy.special
 import itertools
 import multiprocessing
 import multiprocessing.shared_memory
@@ -7,7 +9,8 @@ import threadpoolctl
 
 import data_handler
 
-NUM_PROCESSES = 2 if multiprocessing.cpu_count() <= 16 else multiprocessing.cpu_count() // 8
+#NUM_PROCESSES = 2 if multiprocessing.cpu_count() <= 16 else multiprocessing.cpu_count() // 8
+NUM_PROCESSES = multiprocessing.cpu_count() // 2
 
 def get_shared_data(shape):
     d_size = np.dtype(np.float64).itemsize * np.prod(shape)
@@ -63,79 +66,149 @@ class Fitter:
             raise ValueError("Mismatch in size of input_data and fit_function passed to fitter.Fitter")
 
 
-    def do_fit(self, **kwargs):
+    def do_fit(self, uncorrelated=False, **kwargs):
         """
+        Args:
+            uncorrelated (bool): self explanatory, default is false
+            kwargs: to be passed to lsq
         Returns:
-          bool: True if fit is successful, otherwise False
+            bool: True if fit is successful, otherwise False
         """
 
-        if self.input_data.num_data <= 0:
-            print(f"ndat <= 0; fit failed")
+        # get args
+        try:
+            if self.input_data.num_data <= 0:
+                print(f"ndat <= 0; fit failed")
+                return False
+
+            self._dof = self.input_data.num_data - self.fit_function.num_params + self.fit_function.num_priors
+
+            if self._dof <= 0:
+                print(f"invalid dof={self._dof}, ndat={self.input_data.num_data}; fit failed")
+                return False
+
+            self.input_data.set_covariance(uncorrelated)
+
+            init_guesses_flat = list()
+            for param in self.fit_function.params:
+                init_guesses_flat.append(self.init_guesses[param])
+
+            # construct result data structures
+            data_shape = (self.input_data.num_samples+1, len(init_guesses_flat))
+            fit_data_sh = get_shared_data(data_shape)
+
+            # do fit
+            with threadpoolctl.threadpool_limits(limits=1, user_api='blas'):
+                fit_results_mean = fit_sample(0, fit_data_sh, self.input_data, self.fit_function, init_guesses_flat, **kwargs)
+
+                self._chi2 = 2.*fit_results_mean.cost
+                init_guesses_flat = fit_results_mean.x
+
+                with multiprocessing.Pool(processes=NUM_PROCESSES) as pool:
+                    pool.starmap(fit_sample, zip(list(range(1, self.input_data.num_samples+1)),
+                                                 itertools.repeat(fit_data_sh),
+                                                 itertools.repeat(self.input_data),
+                                                 itertools.repeat(self.fit_function),
+                                                 itertools.repeat(init_guesses_flat)))
+
+
+            # get results
+            fit_data = np.copy(np.ndarray(shape=data_shape, dtype=np.float64, buffer=fit_data_sh.buf))
+            self._params = dict()
+            for param_i, param in enumerate(self.fit_function.params):
+                self._params[param] = data_handler.Data(fit_data[:,param_i])
+
+            release_shared_data(fit_data_sh.name)
+
+        except Exception as e:
+            print("Fit failed: {e}")
             return False
-
-        self._dof = self.input_data.num_data - self.fit_function.num_params + self.fit_function.num_priors
-
-        if self._dof < 0:
-            print(f"invalid dof={self._dof}, ndat={self.input_data.num_data}; fit failed")
-            return False
-
-        self.input_data.set_covariance()
-
-        init_guesses_flat = list()
-        for param in self.fit_function.params:
-            init_guesses_flat.append(self.init_guesses[param])
-
-        # construct result data structures
-        data_shape = (self.input_data.num_samples+1, len(init_guesses_flat))
-        fit_data_sh = get_shared_data(data_shape)
-
-        # do fit
-        with threadpoolctl.threadpool_limits(limits=1, user_api='blas'):
-            fit_results_mean = fit_sample(0, fit_data_sh, self.input_data, self.fit_function, init_guesses_flat, **kwargs)
-
-            self._chi2 = 2.*fit_results_mean.cost
-            init_guesses_flat = fit_results_mean.x
-
-            with multiprocessing.Pool(processes=NUM_PROCESSES) as pool:
-                pool.starmap(fit_sample, zip(list(range(1, self.input_data.num_samples+1)),
-                                             itertools.repeat(fit_data_sh),
-                                             itertools.repeat(self.input_data),
-                                             itertools.repeat(self.fit_function),
-                                             itertools.repeat(init_guesses_flat)))
-
-
-        # get results
-        fit_data = np.copy(np.ndarray(shape=data_shape, dtype=np.float64, buffer=fit_data_sh.buf))
-        self._params = dict()
-        for param_i, param in enumerate(self.fit_function.params):
-            self._params[param] = data_handler.Data(fit_data[:,param_i])
-
-        release_shared_data(fit_data_sh.name)
 
         return True
 
-    def output(self):
-        _output = f"Fit results:\n"
-        _output += f"    chi2/dof [dof] = {round(self.chi2_dof, 2)} [{self.dof}]      Q = {round(self.Q, 3)}"
+    def output(self, spacing=0):
+        _output = spacing*" " + f"Fit results:\n"
+        _output += spacing*" " + f"    chi2/dof [dof] = {round(self.chi2_dof, 2)} [{self.dof}]      Q = {round(self.Q, 3)}     AIC = {round(self.AIC, 3)}"
         if self.logGBF is None:
             _output += "\n\n"
         else:
             _output += f"      logGBF = {round(self.logGBF, 2)}      w = {round(self.w, 2)}\n\n"
 
-        _output += "Parameters:\n"
+        _output += spacing*" " + "Parameters:\n"
 
         for data_type, fit_func in zip(self.input_data.data_types, self.fit_function.fit_functions):
-            _output += f"    Data: {data_type.data_name}, Fit function: {fit_func.fit_name}\n"
+            _output += spacing*" " + f"    Data: {data_type.data_name}, Fit function: {fit_func.fit_name}\n"
             for param in fit_func.params:
                 param_value = self.params[param]
                 init_guess = self.init_guesses[param]
-                _output += f"      {param : >10} {str(param_value):>15}    [ {init_guess:>12.6f} "
+                _output += spacing*" " + f"      {param : >10} {str(param_value):>15}    [ {init_guess:>12.6f} "
                 if param in self.fit_function.priors:
                     _output += f", {str(self.fit_function.priors[param]):>15} "
                 _output += "]\n"
             _output += "\n"
 
         return _output
+
+    def write_to_hdf5(self, filename, fit_name, params, append=True):
+        if append:
+            fh = h5py.File(filename, 'a')
+        else:
+            fh = h5py.File(filename, 'w-')
+
+        if fh[fit_name]:
+            print(f"Group '{fit_name}' already exists in file '{filename}'")
+            sys.exit()
+
+        fit_group = fh.create_group(fit_name)
+        for param in params:
+            fit_group.create_dataset(param, data=self.params[param])
+
+        fit_group.attrs['chi2'] = self.chi2
+        fit_group.attrs['dof'] = self.dof
+        fit_group.attrs['num_params'] = self.num_params
+        fit_group.attrs['num_priors'] = self.num_priors
+
+        params = list()
+        priored_params = list()
+        init_guesses = list()
+        param_results = list()
+        priors = list()
+
+        for fit_func in self.fit_function.fit_functions:
+            for param in fit_func.params:
+                params.append(param)
+                param_results.append(str(self.params[param]))
+                init_guesses.append(self.init_guesses[param])
+                if param in self.fit_function.priors:
+                    priored_params.append(param)
+                    priors.append(str(self.fit_function.pirors[param]))
+
+        fit_group.attrs['params'] = np.array(params)
+        fit_group.attrs['param_results'] = np.array(param_results)
+        fit_group.attrs['init_guesses'] = np.array(init_guesses)
+        if priored_params:
+            fit_group.attrs['priored_params'] = np.array(priored_params)
+            fit_group.attrs['priors'] = np.array(priors)
+
+        fh.close()
+
+
+    @property
+    def num_params(self):
+        return self.fit_function.num_params
+
+    @property
+    def num_priors(self):
+        return self.fit_function.num_priors
+
+    @property
+    def Q(self):
+        if hasattr(self, '_Q'):
+            return self._Q
+        elif hasattr(self, '_chi2') and hasattr(self, '_dof'):
+            self._Q = scipy.special.gammaincc(self.dof/2., self.chi2/2.)
+            return self._Q
+        return None
 
     @property
     def chi2(self):
@@ -156,16 +229,15 @@ class Fitter:
         return None
 
     @property
-    def logGBF(self):
-        if hasattr(self, '_logGBF'):
-            return self._logGBF
+    def AIC(self):
+        if hasattr(self, '_Q'):
+            return 2.*self.num_params - 2.*np.log(self.Q)
         return None
 
     @property
-    def Q(self):
-        if hasattr(self, '_chi2') and hasattr(self, '_dof'):
-            Q = scipy.special.gammaincc(self.dof/2., self.chi2/2.)
-            return Q
+    def logGBF(self):
+        if hasattr(self, '_logGBF'):
+            return self._logGBF
         return None
 
     @property

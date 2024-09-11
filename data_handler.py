@@ -10,7 +10,7 @@ import scipy.linalg
 import matplotlib.pyplot as plt
 #plt.rc('font', family='serif', serif=['Times'], size=55)
 #plt.rc('text', usetex=True)
-plt.style.use('/home/ahanlon/lattice_code/qcd_analysis/plots.mplstyle')
+plt.style.use('/home/ahanlon/code/lattice/qcd_analysis/plots.mplstyle')
 
 
 class SamplingMode(enum.Enum):
@@ -127,8 +127,8 @@ class Data:
                 self._samples[sample_i] = (ensemble_ave - bin_value) / (num_rebin_bins - 1)
 
         else:
-            if num_bins != BOOTSTRAPS.shape[1]:
-                print(num_bins)
+            if num_rebin_bins != BOOTSTRAPS.shape[1]:
+                print(num_rebin_bins)
                 print(BOOTSTRAPS.shape)
                 raise TypeError("Number of bins does not match number of configs")
 
@@ -197,12 +197,23 @@ class Data:
         plt.savefig(plot_file)
         plt.close()
 
+    def plot_bins(self, plot_file, num_bins=20):
+        fig, ax = plt.subplots()
+        ax.hist(self._bins[:], bins=num_bins)
+
+        plt.tight_layout(pad=0.80)
+        plt.savefig(plot_file)
+        plt.close()
+
 
     def gvar(self):
         return gv.gvar(self.mean, self.sdev)
 
     def exp(self):
         return Data(np.exp(self.samples))
+
+    def cosh(self):
+        return Data(np.cosh(self.samples))
 
     def log(self):
         return Data(np.log(self.samples))
@@ -326,7 +337,7 @@ class DataType(metaclass=abc.ABCMeta):
         else:
             return cov_factor * np.diag(np.einsum('ij,ji->i', diffs.conj().T, diffs))
 
-    def set_covariance(self, remove_correlations=[]):
+    def set_covariance(self, uncorrelated=False, remove_correlations=[]):
         samples = self.get_samples()
 
         if get_sampling_mode() == SamplingMode.JACKKNIFE:
@@ -344,6 +355,15 @@ class DataType(metaclass=abc.ABCMeta):
 
             cov[i,j] = 0.
             cov[j,i] = 0.
+
+        if uncorrelated:
+            for i in range(cov.shape[0]):
+                for j in range(cov.shape[1]):
+                    if i == j:
+                        continue
+
+                    cov[i,j] = 0.
+                    cov[j,i] = 0.
 
         self._cov = cov
         self._cov_chol_lower = scipy.linalg.cholesky(cov, lower=True, check_finite=False)
@@ -503,23 +523,29 @@ class FitFunction(metaclass=abc.ABCMeta):
 
     @property
     def priors(self):
-        if hasattr(self, '_pirors'):
+        if hasattr(self, '_priors'):
             return self._priors
         return dict()
 
     @priors.setter
     def priors(self, in_priors):
+        for param in in_priors.keys():
+            if param not in self.params:
+                raise ValueError(f"Not such param {param}")
         self._priors = in_priors
 
     def add_priors(self, priors):
+        if not hasattr(self, '_priors'):
+            self._priors = dict()
+
         for param, prior in priors.items():
+            if param not in self.params:
+                raise ValueError(f"Not such param {param}")
             self._priors[param] = prior
 
     @property
     def num_priors(self):
-        if hasattr(self, '_priors'):
-            return len(self._priors)
-        return 0
+        return len(self.priors)
 
     @abc.abstractmethod
     def function(self, x, p):
@@ -623,6 +649,12 @@ class MultiFitFunction(FitFunction):
         
         return _init_guesses
 
+    '''
+    @property
+    def num_priors(self):
+        return len(self.priors)
+    '''
+
     @property
     def priors(self):
         '''
@@ -640,7 +672,7 @@ class MultiFitFunction(FitFunction):
         _priors = dict()
         for fit_func in self.fit_functions:
             for param, prior in fit_func.priors.items():
-                if param in _pirors and prior != _priors[param]:
+                if param in _priors and prior != _priors[param]:
                     print(f"Warning: conflicthing prior for param {param}")
 
                 _priors[param] = prior
