@@ -149,19 +149,19 @@ class Fitter:
 
         return _output
 
-    def write_to_hdf5(self, filename, fit_name, params, append=True):
+    def write_to_hdf5(self, filename, fit_name, params_to_write, append=True, additional_attrs={}):
         if append:
             fh = h5py.File(filename, 'a')
         else:
             fh = h5py.File(filename, 'w-')
 
-        if fh[fit_name]:
+        if fit_name in fh:
             print(f"Group '{fit_name}' already exists in file '{filename}'")
             sys.exit()
 
         fit_group = fh.create_group(fit_name)
-        for param in params:
-            fit_group.create_dataset(param, data=self.params[param])
+        for param in params_to_write:
+            fit_group.create_dataset(param, data=self.params[param].samples)
 
         fit_group.attrs['chi2'] = self.chi2
         fit_group.attrs['dof'] = self.dof
@@ -183,12 +183,15 @@ class Fitter:
                     priored_params.append(param)
                     priors.append(str(self.fit_function.pirors[param]))
 
-        fit_group.attrs['params'] = np.array(params)
-        fit_group.attrs['param_results'] = np.array(param_results)
-        fit_group.attrs['init_guesses'] = np.array(init_guesses)
+        fit_group.attrs['params'] = params
+        fit_group.attrs['param_results'] = param_results
+        fit_group.attrs['init_guesses'] = init_guesses
         if priored_params:
-            fit_group.attrs['priored_params'] = np.array(priored_params)
-            fit_group.attrs['priors'] = np.array(priors)
+            fit_group.attrs['priored_params'] = priored_params
+            fit_group.attrs['priors'] = priors
+
+        for k, v in additional_attrs.items():
+            fit_group.attrs[k] = v
 
         fh.close()
 

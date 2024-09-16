@@ -81,12 +81,6 @@ class C2ptData(data_handler.DataType):
     def get_tseps(self):
         return list(self._data.keys())
 
-    '''
-    @property
-    def num_data(self):
-      return len(self.get_independent_data())
-    '''
-
     def remove_data(self, tmin=0, tmax=-1, tmax_rel_error=0.):
         new_data = dict()
         for tsep, data in sorted(self._data.items()):
@@ -154,98 +148,6 @@ class C2ptData(data_handler.DataType):
     def print_effective_energy(self, dt=1, cosh=False):
         for tsep, tsep_data in self.get_effective_energy(dt, cosh).items():
             print(f"E_eff({tsep}) = {tsep_data}")
-
-    '''
-    def plot_tmin(self, plot_dir, name, init_guess, priors, num_exps, shifted, tmin_min, tmin_max, tmax, tmax_rel_error=0.):
-      num_params = 2*num_exps
-      fit_function = get_shift_fit_function2(num_exps) if shifted else get_fit_function(num_exps)
-
-      x_vals = dict()
-      y_vals = dict()
-      y_errs = dict()
-      for exp in range(num_exps):
-        x_vals[exp] = list()
-        y_vals[exp] = list()
-        y_errs[exp] = list()
-
-      ps = dict()
-
-      for tmin in range(tmin_min, tmin_max+1):
-        fit_data = self.remove_data(tmin, tmax, tmax_rel_error)
-        if len(fit_data.get_independent_data()) - num_params <= 0:
-          continue
-
-        fit = fitter.Fitter(fit_data, fit_function)
-        fit.do_fit(init_guess, priors)
-
-        ps[tmin] = fit.Q
-
-        x_vals[0].append(tmin)
-        y_vals[0].append(fit.param('E0').mean)
-        y_errs[0].append(fit.param('E0').sdev)
-
-        for exp in range(1, num_exps):
-          x_vals[exp].append(tmin)
-          if shifted:
-            E_data = fit.param(f'D{exp}0') + fit.param('E0')
-            y_vals[exp].append(E_data.mean)
-            y_errs[exp].append(E_data.sdev)
-          else:
-            y_vals[exp].append(fit.param(f'E{exp}').mean)
-            y_errs[exp].append(fit.param(f'E{exp}').sdev)
-
-      for exp in range(num_exps):
-        fig, ax = plt.subplots()
-        ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
-        plt.xlabel(r"$t_{\rm min}$")
-        plt.ylabel(r"$a E_{\rm fit}$")
-
-        for fit_i, tmin in enumerate(x_vals[exp]):
-          plt.errorbar(tmin, y_vals[exp][fit_i], yerr=y_errs[exp][fit_i], color=q_color_map(ps[tmin]), marker='.', capsize=2, capthick=.5, lw=.5, ls='none')
-
-        plt.tight_layout(pad=0.80)
-        plotname = f"Nexp{num_exps}_E{exp}_{name}"
-        plot_file = os.path.join(plot_dir, f"{self.name}_{plotname}.pdf")
-        plt.savefig(plot_file)
-        plt.close()
-    '''
-
-    def do_fit(self, num_exps, log_amps, tmin, tmax, tmax_rel_error, resamplings=True):
-        eff_energy = self.get_effective_energy(1)[tmin + 0.5]
-        eff_energy_val = eff_energy.mean
-
-        eff_amp = np.exp(eff_energy*tmin) * self(tmin).real
-        eff_amp_val = eff_amp.mean
-
-        guesses = {
-            'E0': eff_energy_val,
-            'A0': eff_amp_val,
-        }
-
-        if self.ratio:
-            log_params = ['A0']
-        else:
-            log_params = ['E0', 'A0']
-
-        for n in range(1, num_exps):
-            guesses[f'dE{n},{n-1}'] = .1
-            guesses[f'R{n}'] = .1
-
-            if not self.ratio:
-                log_params.append(f'dE{n},{n-1}')
-
-            if log_amps:
-                log_params.append(f'R{n}')
-
-        fit_function = get_fit_function(num_exps)
-        corr_data = self.remove_data(tmin, tmax, tmax_rel_error)
-        fit = fitter.Fitter(corr_data, fit_function)
-        if fit.do_fit(guesses, log_params, True, False, resamplings):
-            print(fit.output())
-
-            return fit
-
-        return None
 
     def plot_data(self, plot_dir, name):
         fig, ax = plt.subplots()
@@ -385,7 +287,6 @@ class C2ptData(data_handler.DataType):
 
             plt.errorbar(x_vals, y_vals, yerr=y_errs, marker='.', capsize=2, capthick=.5, lw=.5, color=colors[color_i], label=fit_name, ls='none')
 
-        #plt.legend(loc='upper right')
         plt.legend()
         plt.tight_layout(pad=0.80)
         plot_file = os.path.join(plot_dir, f"{self.name}_{name}.pdf")
@@ -492,79 +393,39 @@ class C2ptData(data_handler.DataType):
 #     MODELS
 ###################################################################################################
 
-def get_fit_function(num_states):
-    @fitter.fit_name(f"{num_states}-exp")
-    @fitter.fit_num_params(2*num_states)
-    def fit_function(x, p):
-        f = 1.
-        for i in range(1, num_states):
-            fi = p[f'R{i}']
-            for j in range(i):
-                fi *= gv.exp(-p[f'dE{j+1},{j}']*x)
-            f += fi
-        f *= p['A0']*gv.exp(-p['E0']*x)
-        return f
-
-    return fit_function
-
-'''
-def get_fit_function(num_states):
-  @fitter.fit_name(f"{num_states}-exp")
-  @fitter.fit_num_params(2*num_states)
-  def fit_function(x, p):
-    f = 1.
-    for i in range(1, num_states):
-      fi = p[f'R{i}']*p[f'R{i}']
-      for j in range(1, i+1):
-        fi *= gv.exp(-p[f'dE{j},{j-1}']*x)
-      f += fi
-    f *= p['A0']*p['A0']*gv.exp(-p['E0']*x)
-    return f
-
-  return fit_function
-'''
-
-# TODO: currently assumes degenerate particles
-def get_ratio_fit_function(num_states, single_hadron_psqs):
-    @fitter.fit_name(f"ratio-{num_states}-exp")
-    @fitter.fit_num_params(2*num_states + 2*(num_states-1)*len(set(single_hadron_psqs)))
-    def fit_function(x, p):
-        f_num = 1.
-        f_den = [1. for x in single_hadron_psqs]
-        for i in range(1, num_states):
-            f_num += p[f'R{i}']**2 * gv.exp(-p[f'dE{i},0']*x)
-            f_den_new = list()
-            for f_den_i, psq in zip(f_den, single_hadron_psqs):
-                f_den_i += p[f'r{psq},{i}']**2 * gv.exp(-p[f'dE{psq},{i},0']*x)
-                f_den_new.append(f_den_i)
-
-            f_den = f_den_new
-
-        f = p['R0']**2 * gv.exp(-p[f'dE0']*x) * f_num / np.prod(f_den)
-
-        return f
-
-    return fit_function
-
-
 class C2ptModel(data_handler.FitFunction):
 
-    def __init__(self, num_states):
+    def __init__(self, num_states, ratio=False):
+        if ratio and num_states != 1:
+            print("Ratio fits only support a single state")
+            sys.exit()
+
+        if num_states <= 0:
+            print("Num states must be greater than zero")
+            sys.exit()
+
+        self.ratio = ratio
         self.num_states = num_states
 
     @property
     def fit_name(self):
-        return f"{self.num_states}-exp"
+        if self.ratio:
+            return "ratio"
+        else:
+            return f"{self.num_states}-exp"
 
     @property
     def params(self):
-        _params = ['E0']
-        for i in range(1, self.num_states):
-            _params.append(f'dE{i},{i-1}')
+        if self.ratio:
+            _params = ['dE0', 'dA0']
+        else:
+            _params = ['E0']
+            for i in range(1, self.num_states):
+                _params.append(f'dE{i},{i-1}')
 
-        _params.append('A0')
-        for i in range(1, self.num_states):
-            _params.append(f'R{i}')
+            _params.append('A0')
+            for i in range(1, self.num_states):
+                _params.append(f'R{i}')
 
         return _params
 
@@ -576,7 +437,12 @@ class C2ptModel(data_handler.FitFunction):
             for j in range(i):
                 fi *= np.exp(-p[f'dE{j+1},{j}']*x)
             f += fi
-        f *= p['A0']*np.exp(-p['E0']*x)
+
+        if self.ratio:
+            f *= p['dA0']*np.exp(-p['dE0']*x)
+        else:
+            f *= p['A0']*np.exp(-p['E0']*x)
+
         return f
 
 
@@ -584,13 +450,17 @@ class C2ptModel(data_handler.FitFunction):
         init_guesses_dict = dict()
 
         eff_energy = c2pt_data.get_effective_energy(1)[tsep + 0.5]
-        init_guesses_dict['E0'] = eff_energy.mean
-
         eff_amp = np.exp(eff_energy*tsep) * c2pt_data(tsep).real
-        init_guesses_dict['A0'] = eff_amp.mean
+
+        if self.ratio:
+            init_guesses_dict['dE0'] = eff_energy.mean
+            init_guesses_dict['dA0'] = eff_amp.mean
+        else:
+            init_guesses_dict['E0'] = eff_energy.mean
+            init_guesses_dict['A0'] = eff_amp.mean
 
         for param in self.params:
-            if param == 'E0' or param == 'A0':
+            if param == 'E0' or param == 'A0' or param == 'dE0' or param == 'dA0':
                 continue
 
             init_guesses_dict[param] = .1
@@ -932,287 +802,6 @@ def plot_multiple_dispersion(energies_dict, plot_file, Ns, a):
     plt.close()
 
 
-'''
-def plot_tmins(fit_results, param_name, ylabel, plot_file, yrange=None, include_w=False):
-    if include_w:
-        fig, [energy_ax, q_ax, w_ax] = plt.subplots(3, 1, sharex=True, gridspec_kw={'height_ratios': [4, 1, 1]})
-    else:
-        fig, [energy_ax, q_ax] = plt.subplots(2, 1, sharex=True, gridspec_kw={'height_ratios': [4, 1]})
-
-    if yrange is not None:
-        energy_ax.set_ylim(yrange[0], yrange[1])
-
-    fig.subplots_adjust(hspace=0.)
-    plt.xlabel(r"$t_{\rm min} / a$")
-    energy_ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
-    q_ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
-    if include_w:
-        w_ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
-    energy_ax.set_ylabel(ylabel)
-    q_ax.set_ylabel(r"$Q$")
-    if include_w:
-        w_ax.set_ylabel(r"$w$")
-
-    num_fit_models = len(fit_results)
-    #colors = plt.cm.rainbow(np.linspace(0, 1, num_fit_models))
-    colors = plt.cm.tab10(list(range(8)))
-    disp = .33 * (num_fit_models - 1) / 10
-    displacements = np.linspace(-disp, disp, num_fit_models)
-
-    for plot_i, (fit_label, fits) in enumerate(fit_results.items()):
-        tmin_vals = list()
-        q_vals = list()
-        w_vals = list()
-        fit_vals = list()
-        fit_errs = list()
-
-        for fit in fits:
-            fit_param = fit.param(param_name)
-            if fit_param is None:
-                continue
-
-            tmin = min(fit.independent_data)
-            tmin_vals.append(tmin + displacements[plot_i])
-            q_vals.append(fit.Q)
-            w_vals.append(fit.w)
-            fit_vals.append(fit_param.mean)
-            fit_errs.append(fit_param.sdev)
-
-        if len(fit_vals) == 0:
-            continue
-
-        energy_ax.errorbar(tmin_vals, fit_vals, yerr=fit_errs, marker='.', capsize=2, capthick=.5, elinewidth=.5, lw=.1, color=colors[plot_i], markerfacecolor='none', label=fit_label, ls='none')
-        q_ax.plot(tmin_vals, q_vals, marker='.', lw=.1, color=colors[plot_i], markerfacecolor='none', ls='none')
-        if include_w:
-            w_ax.plot(tmin_vals, w_vals, marker='.', lw=.1, color=colors[plot_i], markerfacecolor='none', ls='none')
-
-    energy_ax.legend()
-    plt.tight_layout(pad=0.80)
-
-    plt.savefig(plot_file)
-    plt.close()
-'''
-
-"""
-def plot_tmins(fit_results, ylabel, plot_file, chosen_fit_result=None, systematic_fit_result=None, include_AIC=False, yrange=None, include_w=False, ALLOWED_SIGMA=3.):
-    if include_w and include_AIC:
-        fig, [energy_ax, q_ax, AIC_ax, w_ax] = plt.subplots(4, 1, sharex=True, gridspec_kw={'height_ratios': [4, 1, 1, 1]})
-    elif include_AIC:
-        fig, [energy_ax, q_ax, AIC_ax] = plt.subplots(3, 1, sharex=True, gridspec_kw={'height_ratios': [4, 1, 1]})
-    elif include_w:
-        fig, [energy_ax, q_ax, w_ax] = plt.subplots(3, 1, sharex=True, gridspec_kw={'height_ratios': [4, 1, 1]})
-    else:
-        fig, [energy_ax, q_ax] = plt.subplots(2, 1, sharex=True, gridspec_kw={'height_ratios': [4, 1]})
-
-    if yrange is not None:
-        energy_ax.set_ylim(yrange[0], yrange[1])
-
-    fig.subplots_adjust(hspace=0.)
-    plt.xlabel(r"$t_{\rm min} / a$")
-    energy_ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
-    q_ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
-    if include_AIC:
-        AIC_ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
-    if include_w:
-        w_ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
-
-    energy_ax.set_ylabel(ylabel)
-    q_ax.set_ylabel(r"$Q$")
-    if include_AIC:
-        AIC_ax.set_ylabel(r"$N e^{-AIC/2}$")
-    if include_w:
-        w_ax.set_ylabel(r"$w$")
-    
-    # get AIC results to use for determining autoscaling
-    '''
-    aic_vals = list()
-    for fits in fit_results.values():
-        for fit in fits:
-            aic_vals.append(fit.AIC)
-
-    aic_min = min(aic_vals)
-    norm = 0.
-    for fits in fit_results.values():
-        for fit in fits:
-            norm += np.exp(-(fit.AIC - aic_min)/2.)
-
-    AIC_weighted_result = 0.
-    for fits in fit_results.values():
-        for fit in fits:
-            weight = np.exp(-(fit.AIC - aic_min)/2.)
-            AIC_weighted_result += (weight/norm) * fit.fit_result
-
-    AIC_rel_error = AIC_weighted_result.sdev / np.abs(AIC_weighted_result.mean)
-    '''
-    aic_norm = 0.
-    for fits in fit_results.values():
-        for fit in fits:
-            aic_norm += np.exp(-fit.AIC/2.)
-
-    AIC_weighted_result = 0.
-    for fits in fit_results.values():
-        for fit in fits:
-            weight = np.exp(-fit.AIC/2.)
-            AIC_weighted_result += (weight/aic_norm) * fit.fit_result
-
-    AIC_rel_error = AIC_weighted_result.sdev / np.abs(AIC_weighted_result.mean)
-
-
-    num_fit_models = len(fit_results)
-    #colors = plt.cm.rainbow(np.linspace(0, 1, num_fit_models))
-    colors = plt.cm.tab10(list(range(8)))
-    disp = .33 * (num_fit_models - 1) / 10
-    displacements = np.linspace(-disp, disp, num_fit_models)
-
-    twin_energy_ax = energy_ax.twinx()
-    twin_energy_ax.autoscale(False)
-    twin_energy_ax.set_yticks([])
-
-    for plot_i, (fit_label, fits) in enumerate(fit_results.items()):
-        tmin_vals = list()
-        good_tmin_vals = list()
-        bad_tmin_vals = list()
-        q_vals = list()
-        aic_vals = list()
-        w_vals = list()
-        good_fit_vals = list()
-        good_fit_errs = list()
-        bad_fit_vals = list()
-        bad_fit_errs = list()
-
-        for fit in fits:
-            fit_param = fit.fit_result
-
-            tmin = fit.tmin
-            tmin_val = tmin + displacements[plot_i]
-            tmin_vals.append(tmin_val)
-            q_vals.append(fit.Q)
-            if include_AIC:
-                #aic_vals.append(np.exp(-(fit.AIC - aic_min/2.)))
-                aic_vals.append(np.exp(-fit.AIC/2.)/aic_norm)
-            if include_w:
-                w_vals.append(fit.w)
-
-            
-            # determine if good
-            good = True
-            '''
-            rel_error = fit_param.sdev / np.abs(fit_param.mean)
-            if rel_error > ALLOWED_SIGMA * AIC_rel_error:
-                good = False
-            '''
-            if fit_param.sdev > ALLOWED_SIGMA*AIC_weighted_result.sdev:
-                good = False
-
-            diff = fit_param - AIC_weighted_result
-
-            upper_limit = diff.mean + 2.*ALLOWED_SIGMA*diff.sdev
-            lower_limit = diff.mean - 2.*ALLOWED_SIGMA*diff.sdev
-
-            if np.sign(upper_limit) == np.sign(lower_limit):
-                good = False
-
-            if good:
-                good_tmin_vals.append(tmin_val)
-                good_fit_vals.append(fit_param.mean)
-                good_fit_errs.append(fit_param.sdev)
-            else:
-                bad_tmin_vals.append(tmin_val)
-                bad_fit_vals.append(fit_param.mean)
-                bad_fit_errs.append(fit_param.sdev)
-
-        if len(good_fit_vals) == 0 and len(bad_fit_vals) == 0:
-            continue
-
-        if len(good_fit_vals):
-            energy_ax.errorbar(good_tmin_vals,
-                               good_fit_vals,
-                               yerr=good_fit_errs,
-                               marker='.',
-                               capsize=2,
-                               capthick=.5,
-                               elinewidth=.5,
-                               lw=.1,
-                               color=colors[plot_i],
-                               markerfacecolor='none',
-                               label=fit_label,
-                               ls='none')
-
-        if len(bad_fit_vals) and len(good_fit_vals) == 0:
-            twin_energy_ax.errorbar(bad_tmin_vals,
-                                    bad_fit_vals,
-                                    yerr=bad_fit_errs,
-                                    marker='.',
-                                    capsize=2,
-                                    capthick=.5,
-                                    elinewidth=.5,
-                                    lw=.1,
-                                    color=colors[plot_i],
-                                    markerfacecolor='none',
-                                    label=fit_label,
-                                    ls='none')
-        elif len(bad_fit_vals):
-            twin_energy_ax.errorbar(bad_tmin_vals,
-                                    bad_fit_vals,
-                                    yerr=bad_fit_errs,
-                                    marker='.',
-                                    capsize=2,
-                                    capthick=.5,
-                                    elinewidth=.5,
-                                    lw=.1,
-                                    color=colors[plot_i],
-                                    markerfacecolor='none',
-                                    ls='none')
-
-        q_ax.plot(tmin_vals, q_vals, marker='.', lw=.1, color=colors[plot_i], markerfacecolor='none', ls='none')
-
-        if include_AIC:
-            AIC_ax.plot(tmin_vals, aic_vals, marker='.', lw=.1, color=colors[plot_i], markerfacecolor='none', ls='none')
-        if include_w:
-            w_ax.plot(tmin_vals, w_vals, marker='.', lw=.1, color=colors[plot_i], markerfacecolor='none', ls='none')
-
-    twin_energy_ax.set_ylim(energy_ax.get_ylim())
-
-    energy_ax.legend(prop={'size': 6})
-    plt.tight_layout(pad=0.80)
-
-    if include_AIC:
-        xmin, xmax = energy_ax.get_xlim()
-        x = np.linspace(xmin, xmax, 100)
-        upper = AIC_weighted_result.mean + AIC_weighted_result.sdev
-        lower = AIC_weighted_result.mean - AIC_weighted_result.sdev
-        energy_ax.fill_between(x, lower, upper, alpha=0.2, color='tab:olive', edgecolor='none')
-        energy_ax.set_xlim(xmin, xmax)
-
-
-    if chosen_fit_result is not None and systematic_fit_result is not None:
-        xmin, xmax = energy_ax.get_xlim()
-        x = np.linspace(xmin, xmax, 100)
-        upper = chosen_fit_result.mean + chosen_fit_result.sdev
-        lower = chosen_fit_result.mean - chosen_fit_result.sdev
-        energy_ax.fill_between(x, lower, upper, alpha=0.2, color='tab:cyan', edgecolor='none')
-
-        # systematic
-        diff = abs(chosen_fit_result.mean - systematic_fit_result.mean)
-        sys_plus_diff = np.sqrt(diff**2 + chosen_fit_result.sdev**2)
-        upper = chosen_fit_result.mean + sys_plus_diff
-        lower = chosen_fit_result.mean - sys_plus_diff
-        energy_ax.fill_between(x, lower, upper, alpha=0.1, color='tab:cyan', edgecolor='none')
-
-        energy_ax.set_xlim(xmin, xmax)
-
-
-    elif chosen_fit_result is not None:
-        xmin, xmax = energy_ax.get_xlim()
-        x = np.linspace(xmin, xmax, 100)
-        upper = chosen_fit_result.mean + chosen_fit_result.sdev
-        lower = chosen_fit_result.mean - chosen_fit_result.sdev
-        energy_ax.fill_between(x, lower, upper, alpha=0.2, color='tab:cyan', edgecolor='none')
-        energy_ax.set_xlim(xmin, xmax)
-
-    plt.savefig(plot_file)
-    plt.close()
-"""
 
 def plot_tmins(fit_results, ylabel, plot_file, chosen_fit_result=None, systematic_fit_result=None, include_AIC=False, yrange=None, include_w=False, ALLOWED_SIGMA=3.):
     if include_w and include_AIC:
