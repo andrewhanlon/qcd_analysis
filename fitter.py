@@ -1,3 +1,4 @@
+import sys
 import h5py
 import numpy as np
 import scipy.optimize
@@ -84,7 +85,7 @@ class Fitter:
             self._dof = self.input_data.num_data - self.fit_function.num_params + self.fit_function.num_priors
 
             if self._dof <= 0:
-                print(f"invalid dof={self._dof}, ndat={self.input_data.num_data}; fit failed")
+                print(f"invalid dof={self._dof}, ndat={self.input_data.num_data}, nparams={self.fit_function.num_params}, npriors={self.fit_function.num_priors}; fit failed")
                 return False
 
             self.input_data.set_covariance(uncorrelated)
@@ -121,7 +122,7 @@ class Fitter:
             release_shared_data(fit_data_sh.name)
 
         except Exception as e:
-            print("Fit failed: {e}")
+            print(f"Fit failed: {e}")
             return False
 
         return True
@@ -149,13 +150,10 @@ class Fitter:
 
         return _output
 
-    def write_to_hdf5(self, filename, fit_name, params_to_write, append=True, additional_attrs={}):
-        if append:
-            fh = h5py.File(filename, 'a')
-        else:
-            fh = h5py.File(filename, 'w-')
+    def write_to_hdf5(self, filename, fit_name, params_to_write, overwrite=True, additional_attrs={}):
+        fh = h5py.File(filename, 'a')
 
-        if fit_name in fh:
+        if fit_name in fh and not overwrite:
             print(f"Group '{fit_name}' already exists in file '{filename}'")
             sys.exit()
 
