@@ -113,18 +113,19 @@ class Data:
 
             rebin_bins[rebin_ci] /= rebin
 
+        ensemble_sum = 0.
+        for bin_value in rebin_bins:
+            ensemble_sum += bin_value
+
         if SAMPLING_MODE == SamplingMode.JACKKNIFE:
             global NUM_JACK
             NUM_JACK = num_rebin_bins
-            ensemble_ave = 0.
-            for bin_value in rebin_bins:
-                ensemble_ave += bin_value
 
             self._samples = np.zeros(num_rebin_bins+1, dtype=rebin_bins.dtype)
-            self._samples[0] = ensemble_ave / num_rebin_bins
+            self._samples[0] = ensemble_sum / num_rebin_bins
 
             for sample_i, bin_value in enumerate(rebin_bins, 1):
-                self._samples[sample_i] = (ensemble_ave - bin_value) / (num_rebin_bins - 1)
+                self._samples[sample_i] = (ensemble_sum - bin_value) / (num_rebin_bins - 1)
 
         else:
             if num_rebin_bins != BOOTSTRAPS.shape[1]:
@@ -134,12 +135,8 @@ class Data:
 
             num_samples = get_num_samples()
 
-            ensemble_ave = 0.
-            for bin_value in rebin_bins:
-                ensemble_ave += bin_value
-
             self._samples = np.zeros(num_samples+1, dtype=rebin_bins.dtype)
-            self._samples[0] = ensemble_ave / num_rebin_bins
+            self._samples[0] = ensemble_sum / num_rebin_bins
             for sample_i in range(num_samples):
                 sample_ave = 0.
                 for rebin_i in range(num_rebin_bins):
@@ -160,6 +157,10 @@ class Data:
     def sdev(self):
         return self.error()
 
+    @property
+    def var(self):
+        return (self.error()**2)
+
     def ensemble_average(self):
         return self.samples[0]
 
@@ -175,10 +176,14 @@ class Data:
             return (self.num_samples - 1)**0.5 * np.std(self.samples[1:])
 
         else:
+            '''
             sorted_samples = np.sort(self.samples[1:])
             percentile_index = int(round(self.num_samples * 0.16))
             error = (self.samples[0] - sorted_samples[percentile_index], sorted_samples[-percentile_index] - self.samples[0])
-            return 0.5*(error[0] + error[1])
+            return (error[0], error[1])
+            '''
+            #return np.std(self.samples[1:], ddof=1, mean=self.samples[0])
+            return np.std(self.samples[1:], ddof=1)
 
     def invert_samples(self):
         temp_samples = np.zeros(self._samples.shape, dtype=self._samples.dtype)
@@ -330,7 +335,8 @@ class DataType(metaclass=abc.ABCMeta):
         else:
             cov_factor = 1./(self.num_samples - 1)
 
-        diffs = samples[1:,:] - samples[0,:]
+        #diffs = samples[1:,:] - samples[0,:]
+        diffs = samples[1:,:] - np.mean(samples[1:,:], axis=0)
 
         if correlated:
             return cov_factor * np.tensordot(diffs.conj(), diffs, axes=(0,0))
@@ -345,7 +351,8 @@ class DataType(metaclass=abc.ABCMeta):
         else:
             cov_factor = 1./(self.num_samples - 1)
 
-        diffs = samples[1:,:] - samples[0,:]
+        #diffs = samples[1:,:] - samples[0,:]
+        diffs = samples[1:,:] - np.mean(samples[1:,:], axis=0)
         cov = cov_factor * np.tensordot(diffs.conj(), diffs, axes=(0,0))
 
         # remove correlations
