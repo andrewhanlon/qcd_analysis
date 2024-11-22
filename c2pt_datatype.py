@@ -1201,8 +1201,9 @@ class C2ptMatrixData:
         self._mean = mean
 
         if mean and td is None and t0 is None:
-            ...
+            raise NotImplementedError("not implemented options: mean and td is None and t0 is None")
         elif mean and td is None:
+            raise NotImplementedError("not implemented options: mean and td is None")
             eigvals = np.empty((self.N, len(self.tseps)), dtype=np.complex128)
             eigvecs = np.empty((self.N, self.N, len(self.tseps)), dtype=np.complex128)
             t0_i = self.tseps.index(t0)
@@ -1237,9 +1238,9 @@ class C2ptMatrixData:
             eigvecs = np.repeat(eigvecs_mean[:, :, :, np.newaxis], data_handler.get_num_samples()+1, axis=3)
 
         elif td is None and t0 is None:
-            ...
-
+            raise NotImplementedError("not implemented options: td is None and t0 is None")
         elif td is None:
+            raise NotImplementedError("not implemented options: td is None")
             eigvecs = np.empty((self.N, self.N, len(self.tseps), data_handler.get_num_samples()+1), dtype=np.complex128)
             t0_i = self.tseps.index(t0)
             for td_i, td in enumerate(self.tseps):
@@ -1247,6 +1248,7 @@ class C2ptMatrixData:
                     _, eigvecs[:, :, td_i, s_i] = scipy.linalg.eigh(self._raw_corr_mat[:, :, td_i, s_i], self._raw_corr_mat[:, :, t0_i, s_i])
 
         else:
+            raise NotImplementedError("not implemented options:")
             eigvecs = np.empty((self.N, self.N, data_handler.get_num_samples()+1), dtype=np.complex128)
             t0_i = self.tseps.index(t0)
             td_i = self.tseps.index(td)
@@ -1281,6 +1283,7 @@ class C2ptMatrixData:
         return None
 
     def get_energy_overlaps(self, t, energy_i, amplitude):
+        '''
         t0_i = self.tseps.index(self._t0)
         t_i = self.tseps.index(t)
 
@@ -1297,6 +1300,7 @@ class C2ptMatrixData:
             overlap_list[op_i] /= overlap_sum
 
         return np.array(overlap_list)
+        '''
 
     def get_overlaps(self, t, amplitudes):
         """
