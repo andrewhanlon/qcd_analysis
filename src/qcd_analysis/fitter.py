@@ -8,7 +8,7 @@ import multiprocessing
 import multiprocessing.shared_memory
 import threadpoolctl
 
-import data_handler
+from qcd_analysis import data_handler
 
 #NUM_PROCESSES = 2 if multiprocessing.cpu_count() <= 16 else multiprocessing.cpu_count() // 8
 NUM_PROCESSES = multiprocessing.cpu_count() // 2
@@ -129,11 +129,13 @@ class Fitter:
 
     def output(self, spacing=0):
         _output = spacing*" " + f"Fit results:\n"
-        _output += spacing*" " + f"    chi2/dof [dof] = {round(self.chi2_dof, 2)} [{self.dof}]      Q = {round(self.Q, 3)}     AIC = {round(self.AIC, 3)}"
+        _output += spacing*" " + f"    chi2/dof [dof] = {round(self.chi2_dof, 2)} [{self.dof}]      Q = {round(self.Q, 3)}     AIC = {round(self.AIC, 3)}\n\n"
+        '''
         if self.logGBF is None:
             _output += "\n\n"
         else:
             _output += f"      logGBF = {round(self.logGBF, 2)}      w = {round(self.w, 2)}\n\n"
+        '''
 
         _output += spacing*" " + "Parameters:\n"
 
@@ -150,7 +152,7 @@ class Fitter:
 
         return _output
 
-    def write_to_hdf5(self, filename, fit_name, params_to_write, overwrite=True, additional_attrs={}):
+    def write_to_hdf5(self, filename, fit_name, params_to_write, overwrite=True, additional_params={}, additional_attrs={}):
         fh = h5py.File(filename, 'a')
 
         if fit_name in fh and not overwrite:
@@ -160,6 +162,10 @@ class Fitter:
         fit_group = fh.create_group(fit_name)
         for param in params_to_write:
             fit_group.create_dataset(param, data=self.params[param].samples)
+
+        for param, param_data in additional_params.items():
+            if param not in params_to_write:
+                fit_group.create_dataset(param, data=param_data.samples)
 
         fit_group.attrs['chi2'] = self.chi2
         fit_group.attrs['dof'] = self.dof
@@ -209,43 +215,50 @@ class Fitter:
         elif hasattr(self, '_chi2') and hasattr(self, '_dof'):
             self._Q = scipy.special.gammaincc(self.dof/2., self.chi2/2.)
             return self._Q
-        return None
+        else:
+            raise AttributeError("Cannot access Q: fit not done yet!")
 
     @property
     def chi2(self):
         if hasattr(self, '_chi2'):
             return self._chi2
-        return None
+        else:
+            raise AttributeError("Cannot access chi2: fit not done yet!")
 
     @property
     def dof(self):
         if hasattr(self, '_dof'):
             return self._dof
-        return None
+        else:
+            raise AttributeError("Cannot access dof: fit not done yet!")
 
     @property
     def chi2_dof(self):
         if hasattr(self, '_chi2') and hasattr(self, '_dof'):
             return self._chi2 / self._dof
-        return None
+        else:
+            raise AttributeError("Cannot access chi2_dof: fit not done yet!")
 
     @property
     def AIC(self):
         if hasattr(self, '_Q'):
             return 2.*self.num_params - 2.*np.log(self.Q)
-        return None
+        else:
+            raise AttributeError("Cannot access AIC: fit not done yet!")
 
     @property
     def logGBF(self):
         if hasattr(self, '_logGBF'):
             return self._logGBF
-        return None
+        else:
+            raise AttributeError("Cannot access logGBF: fit not done yet!")
 
     @property
     def params(self):
         if hasattr(self, '_params'):
             return self._params
-        return None
+        else:
+            raise AttributeError("Cannot access params: fit not done yet!")
 
     @property
     def init_guesses(self):

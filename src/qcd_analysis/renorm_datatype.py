@@ -14,12 +14,9 @@ import gvar as gv
 import matplotlib.colors
 import matplotlib.ticker
 import matplotlib.pyplot as plt
-#plt.rc('font', family='serif', serif=['Times'], size=55)
-#plt.rc('text', usetex=True)
-plt.style.use('/home/ahanlon/code/lattice/qcd_analysis/plots.mplstyle')
 
-import data_handler
-import lsqfit_fitter as fitter
+from qcd_analysis import data_handler
+from qcd_analysis import lsqfit_fitter as fitter
 
 hc = 6.62607015e-34 / 1.602176634e-19 / (2*np.pi) * 299792458 * 1e6 # exact: new SI
 

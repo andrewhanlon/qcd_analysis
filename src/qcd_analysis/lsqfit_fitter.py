@@ -13,7 +13,7 @@ import itertools
 import gvar as gv
 import lsqfit
 
-import data_handler
+from qcd_analysis import data_handler
 
 DEBUG = False
 NUM_PROCESSES = 2 if multiprocessing.cpu_count() <= 16 else multiprocessing.cpu_count() // 8

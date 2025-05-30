@@ -8,9 +8,6 @@ import gvar as gv
 import scipy.linalg
 
 import matplotlib.pyplot as plt
-#plt.rc('font', family='serif', serif=['Times'], size=55)
-#plt.rc('text', usetex=True)
-plt.style.use('/home/ahanlon/code/lattice/qcd_analysis/plots.mplstyle')
 
 
 class SamplingMode(enum.Enum):
@@ -26,6 +23,7 @@ def set_to_jackknife():
     SAMPLING_MODE = SamplingMode.JACKKNIFE
     BOOTSTRAPS = None
 
+'''
 def set_to_bootstrap(num_confs, rebin, num_samples, seed, skip=0):
     global SAMPLING_MODE, NUM_SAMPLES, BOOTSTRAPS
     SAMPLING_MODE = SamplingMode.BOOTSTRAP
@@ -38,6 +36,21 @@ def set_to_bootstrap(num_confs, rebin, num_samples, seed, skip=0):
                 random.randrange(num_bins)
             bin_i = random.randrange(num_bins)
             BOOTSTRAPS[samp_i,bin_i] += 1
+
+    NUM_SAMPLES = BOOTSTRAPS.shape[0]
+'''
+def set_to_bootstrap(num_confs, rebin, num_samples, seed, skip=0):
+    global SAMPLING_MODE, NUM_SAMPLES, BOOTSTRAPS
+    SAMPLING_MODE = SamplingMode.BOOTSTRAP
+    num_bins = num_confs // rebin
+    BOOTSTRAPS = np.zeros((num_samples, num_bins), dtype=np.int32)
+    random.seed(seed)
+    for samp_i in range(num_samples):
+        for bin_i in range(num_bins):
+            for skip_i in range(skip):
+                random.randrange(num_bins)
+            bin_i_map = random.randrange(num_bins)
+            BOOTSTRAPS[samp_i,bin_i] = bin_i_map
 
     NUM_SAMPLES = BOOTSTRAPS.shape[0]
 
@@ -103,6 +116,7 @@ class Data:
             self._samples[1:] = np.random.normal(gvar_data.mean, gvar_data.sdev, num_samples)
 
     def _create_samples(self):
+        #import time
         num_bins = len(self._bins)
         rebin = get_rebin()
         num_rebin_bins = num_bins // rebin
@@ -137,12 +151,15 @@ class Data:
 
             self._samples = np.zeros(num_samples+1, dtype=rebin_bins.dtype)
             self._samples[0] = ensemble_sum / num_rebin_bins
+            #start = time.time()
             for sample_i in range(num_samples):
+                boots_map = BOOTSTRAPS[sample_i,:]
                 sample_ave = 0.
                 for rebin_i in range(num_rebin_bins):
-                    sample_ave += BOOTSTRAPS[sample_i,rebin_i] * rebin_bins[rebin_i]
+                    sample_ave += rebin_bins[boots_map[rebin_i]]
 
                 self._samples[sample_i+1] = sample_ave / num_rebin_bins
+            #print(time.time() - start)
 
 
     @property
@@ -302,8 +319,9 @@ class DataType(metaclass=abc.ABCMeta):
     def data_name(self):
         pass
 
+    @property
     @abc.abstractmethod
-    def get_samples(self):
+    def samples(self):
         """ gets samples of the data
 
         Returns: Must be of shape (num_samples+1, num_observables)
@@ -328,7 +346,7 @@ class DataType(metaclass=abc.ABCMeta):
         return len(self.get_organized_independent_data())
 
     def get_covariance_lsqfit(self, correlated=True):
-        samples = self.get_samples()
+        samples = self.samples
 
         if get_sampling_mode() == SamplingMode.JACKKNIFE:
             cov_factor = 1. - 1./self.num_samples
@@ -344,7 +362,7 @@ class DataType(metaclass=abc.ABCMeta):
             return cov_factor * np.diag(np.einsum('ij,ji->i', diffs.conj().T, diffs))
 
     def set_covariance(self, uncorrelated=False, remove_correlations=[]):
-        samples = self.get_samples()
+        samples = self.samples
 
         if get_sampling_mode() == SamplingMode.JACKKNIFE:
             cov_factor = 1. - 1./self.num_samples
@@ -383,7 +401,7 @@ class DataType(metaclass=abc.ABCMeta):
 
 
     def get_residuals(self, samp_i, fit_func, params):
-        residuals = fit_func(self.get_independent_data(), params) - self.get_samples()[samp_i,:]
+        residuals = fit_func(self.get_independent_data(), params) - self.samples[samp_i,:]
         if fit_func.num_priors:
             priored_residuals = fit_func.get_priored_residuals(params, samp_i)
             residuals = np.concatenate((residuals, priored_residuals))
@@ -434,8 +452,9 @@ class MultiDataType(DataType):
     def num_data(self):
         return sum([data_type.num_data for data_type in self._data_types])
 
-    def get_samples(self):
-        data_type_samps = [data_type.get_samples() for data_type in self._data_types]
+    @property
+    def samples(self):
+        data_type_samps = [data_type.samples for data_type in self._data_types]
         return np.concatenate(data_type_samps, axis=1)
 
     @property
