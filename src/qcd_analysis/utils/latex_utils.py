@@ -1,7 +1,7 @@
 import os
 import pylatex
 
-from qcd_analysis import c2pt_plotting
+from qcd_analysis.plotting import c2pt_plotting
 
 def create_spectrum_doc(pdf_dir, title, ):
     ...

@@ -1,40 +1,45 @@
+import sys
+
 import numpy as np
 
-from qcd_analysis import data_handler
+from qcd_analysis.data_handling import data_handler
 
-class C2ptModel(data_handler.FitFunction):
 
-    def __init__(self, num_states, ratio=False):
-        if ratio and num_states != 1:
-            print("Ratio fits only support a single state")
-            sys.exit()
 
+def C2ptModel(model_name):
+    model_name_tokens = model_name.split('_')
+
+    if model_name_tokens[0] == "ratio":
+        return C2ptRatioModel()
+    elif model_name_tokens[0] == "direct":
+        num_states, _ = model_name_tokens[1].split('-')
+        return C2ptDirectModel(int(num_states))
+    else:
+        print(f"Unknown C2pt model '{model_name}'")
+
+
+class C2ptDirectModel(data_handler.FitFunction):
+
+    def __init__(self, num_states):
         if num_states <= 0:
             print("Num states must be greater than zero")
             sys.exit()
 
-        self.ratio = ratio
         self.num_states = num_states
 
     @property
     def fit_name(self):
-        if self.ratio:
-            return "ratio"
-        else:
-            return f"{self.num_states}-exp"
+        return f"c2pt_{self.num_states}-exp"
 
     @property
     def params(self):
-        if self.ratio:
-            _params = ['dE0', 'dA0']
-        else:
-            _params = ['E0']
-            for i in range(1, self.num_states):
-                _params.append(f'dE{i},{i-1}')
+        _params = ['E0']
+        for i in range(1, self.num_states):
+            _params.append(f'dE{i},{i-1}')
 
-            _params.append('A0')
-            for i in range(1, self.num_states):
-                _params.append(f'R{i}')
+        _params.append('A0')
+        for i in range(1, self.num_states):
+            _params.append(f'R{i}')
 
         return _params
 
@@ -47,10 +52,7 @@ class C2ptModel(data_handler.FitFunction):
                 fi *= np.exp(-p[f'dE{j+1},{j}']*x)
             f += fi
 
-        if self.ratio:
-            f *= p['dA0']*np.exp(-p['dE0']*x)
-        else:
-            f *= p['A0']*np.exp(-p['E0']*x)
+        f *= p['A0']*np.exp(-p['E0']*x)
 
         return f
 
@@ -61,21 +63,45 @@ class C2ptModel(data_handler.FitFunction):
         eff_energy = c2pt_data.get_effective_energy(1)[tsep + 0.5]
         eff_amp = np.exp(eff_energy*tsep) * c2pt_data(tsep).real
 
-        if self.ratio:
-            init_guesses_dict['dE0'] = eff_energy.mean
-            init_guesses_dict['dA0'] = eff_amp.mean
-        else:
-            init_guesses_dict['E0'] = eff_energy.mean
-            init_guesses_dict['A0'] = eff_amp.mean
+        init_guesses_dict['E0'] = eff_energy.mean
+        init_guesses_dict['A0'] = eff_amp.mean
 
         for param in self.params:
-            if param == 'E0' or param == 'A0' or param == 'dE0' or param == 'dA0':
+            if param == 'E0' or param == 'A0':
                 continue
 
             init_guesses_dict[param] = .1
 
         return init_guesses_dict
                 
+
+class C2ptRatioModel(data_handler.FitFunction):
+
+    @property
+    def fit_name(self):
+        return "c2pt_ratio"
+
+    @property
+    def params(self):
+        return ['dE0', 'dA0']
+
+
+    def function(self, x, p):
+        f = p['dA0']*np.exp(-p['dE0']*x)
+        return f
+
+
+    def get_init_guesses(self, c2pt_data, tsep):
+        init_guesses_dict = dict()
+
+        eff_energy = c2pt_data.get_effective_energy(1)[tsep + 0.5]
+        eff_amp = np.exp(eff_energy*tsep) * c2pt_data(tsep).real
+
+        init_guesses_dict['dE0'] = eff_energy.mean
+        init_guesses_dict['dA0'] = eff_amp.mean
+
+        return init_guesses_dict
+
 
 class MresModel(data_handler.FitFunction):
 
@@ -105,9 +131,9 @@ class C2ptThermalModel(data_handler.FitFunction):
     @property
     def fit_name(self):
         if self.constant:
-            return f"ThermalN{self.num_states}PlusConstant"
+            return f"c2pt_thermal_{self.num_states}-exp_constant"
         else:
-            return f"ThermalN{self.num_states}"
+            return f"c2pt_thermal_{self.num_states}-exp"
 
     @property
     def params(self):

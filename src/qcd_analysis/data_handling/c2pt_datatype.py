@@ -5,7 +5,9 @@ import scipy.linalg
 import warnings
 import copy
 
-from qcd_analysis import data_handler, fitter
+from qcd_analysis.data_handling import data_handler
+from qcd_analysis.fitting import fitter
+from qcd_analysis.models import c2pt_models
 
 ###################################################################################################
 #     C2ptData
@@ -260,7 +262,7 @@ class C2ptData(data_handler.DataType):
             for non_int_corr in non_int_corrs:
                 non_int_amps.append(non_int_corr.get_amplitude([], tmin, tmax, tmax_rel_error, num_exps))
 
-        fit_func = C2ptModel(num_exps)
+        fit_func = c2pt_models.C2ptDirectModel(num_exps)
         fit_func.init_guesses = fit_func.get_init_guesses(fit_data, tmin)
 
         the_fitter = fitter.Fitter(fit_data, fit_func)
@@ -290,6 +292,10 @@ class C2ptMatrixData:
         self.N = self._corr_mat.shape[0]
         tsep_min = None
         tsep_max = None
+
+        self.operators = list()
+        for i in range(self.N):
+            self.operators.append(self._corr_mat[i,i].snk_operator)
 
         if self._hermitian:
             for i in range(self.N):
@@ -321,8 +327,8 @@ class C2ptMatrixData:
                         else:
                             raise TypeError("huh?")
 
-                    self._corr_mat[i,j] = C2ptData(new_data_ij_dict)
-                    self._corr_mat[j,i] = C2ptData(new_data_ji_dict)
+                    self._corr_mat[i,j] = C2ptData(new_data_ij_dict, self.operators[i], self.operators[j])
+                    self._corr_mat[j,i] = C2ptData(new_data_ji_dict, self.operators[j], self.operators[i])
 
 
         else:
@@ -369,6 +375,14 @@ class C2ptMatrixData:
                 corrs.append(self._corr_mat[i, j])
 
         return corrs
+
+    def get_operator_set(self):
+        operators = list()
+        for i in range(self.N):
+            operators.append(self._corr_mat[i, i].snk_operator)
+
+        return operators
+
 
 
     def get_principal_correlators(self, t0=None, td=None, mean=True):
@@ -459,7 +473,7 @@ class C2ptMatrixData:
                 for ts_i, ts in enumerate(self.tseps):
                     c2pt_data_dict[ts] = data_handler.Data(principal_corrs_raw[n_i, n_j, ts_i, :])
 
-                principal_corrs[n_i, n_j] = C2ptData(c2pt_data_dict)
+                principal_corrs[n_i, n_j] = C2ptData(c2pt_data_dict, f"ROT_{n_i}", f"ROT_{n_j}")
 
         return C2ptMatrixData(principal_corrs)
 
@@ -505,11 +519,12 @@ class C2ptMatrixData:
         self._overlaps = np.array(overlap_list)
 
         if filename is not None:
+            operators = self.get_operator_set()
             with open(filename, 'w') as f:
                 for op_id in range(self.overlaps.shape[0]):
-                    f.write(f"{irrep_ops[op_id]}\n")
+                    f.write(f"{operators[op_id]}\n")
                     for level_id in range(self.overlaps.shape[1]):
-                        f.write(f"  {level_id}: {str(corr_mat.overlaps[op_id, level_id])}\n")
+                        f.write(f"  {level_id}: {str(self.overlaps[op_id, level_id])}\n")
                     f.write('\n')
 
     @property

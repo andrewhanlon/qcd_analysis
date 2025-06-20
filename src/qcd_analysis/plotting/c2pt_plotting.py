@@ -173,54 +173,76 @@ def plot_dispersion(plot_file, energies, Ns):
 
     plt.close()
 
-
-def plot_tmin(plot_file, energies, chosen_energy_key=None, y_label=r"$a E_{\rm fit}$", include_quality=False):
+def plot_tmin(plot_file, results, height_ratios, chosen_results={}):
     """
-    Args: energies - dict {label: {tmin: fit_result}}
+    Args:
+        plot_file - str: where the file is to be saved
+        results - dict {yaxis_label: {legend_label: tmin: {Data or float}}}
+        height_ratios - list: relative heights of the individual axes
+        chosen_results - {yaxis_label: {legend_label: tmin}}
     """
 
-    if include_quality:
-        fig, [energy_ax, q_ax] = plt.subplots(2, 1, sharex=True, gridspec_kw={'height_ratios': [4, 1]})
-        q_ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
-        q_ax.set_ylabel(r"$Q$")
-    else:
-        fig, energy_ax = plt.subplots()
-
-    energy_ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
+    num_subplots = len(results)
+    fig, axes = plt.subplots(num_subplots, 1, sharex=True, gridspec_kw={'height_ratios': height_ratios})
 
     plt.xlabel(r"$t_{\rm min}$")
-    plt.ylabel(y_label)
 
-    colors = plt.cm.tab10(list(range(len(energies))))
+    avail_colors = plt.cm.tab10(list(range(10)))
 
-    for color_i, (label, energies_dict) in enumerate(energies.items()):
+    colors = dict()
+    color_i = 0
+    legend_elements = list()
 
-        x_vals = list()
-        y_vals = list()
-        y_errs = list()
-        q_vals = list()
+    for ax, (ax_label, legends_dict) in zip(axes, results.items()):
+        ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
+        ax.set_ylabel(ax_label)
 
-        for tmin, energy_result in energies_dict.items():
+        disps = np.linspace(-.2, .2, len(legends_dict))
 
-            x_vals.append(tmin)
-            y_vals.append(energy_result.mean)
-            y_errs.append(energy_result.sdev)
-            q_vals.append(energy_result.Q)
+        ax_chosen_results = {} if ax_label not in chosen_results else chosen_results[ax_label]
 
-        plt.errorbar(x_vals, y_vals, yerr=y_errs, marker='o', color=colors[color_i], capsize=2, capthick=.5, lw=.5, ls='none', markerfacecolor='none', label=label)
+        for legend_label_i, (legend_label, tmins_dict) in enumerate(legends_dict.items()):
+            if legend_label in colors:
+                color = colors[legend_label]
+            else:
+                color = avail_colors[color_i]
+                color_i += 1
+                colors[legend_label] = color
+                legend_elements.append(plt.plot([], label=legend_label, marker='o')[0])
 
-        if include_quality:
-            q_ax.plot(x_vals, q_vals, marker='o', ms=2, mew=.5, lw=.05, color=colors[color_i], markerfacecolor='none', ls='none')
+            x_vals = list()
+            y_vals = list()
+            y_errs = list()
 
-    if chosen_energy_key is not None:
-        chosen_energy_result = energies[chosen_energy_key[0]][chosen_energy_key[1]]
+            for tmin, result in tmins_dict.items():
+                x_vals.append(tmin+disps[legend_label_i])
+                try:
+                    y_errs.append(result.sdev)
+                    y_vals.append(result.mean)
+                except AttributeError:
+                    y_vals.append(result)
 
-        tmin, tmax = energy_ax.get_xlim()
-        x = np.linspace(tmin, tmax, 100)
-        upper = chosen_energy_result.mean + chosen_energy_result.sdev
-        lower = chosen_energy_result.mean - chosen_energy_result.sdev
-        plt.hlines(y=chosen_energy_result.mean, xmin=tmin, xmax=tmax, colors='k', linestyles='--', lw=1.)
-        energy_ax.fill_between(x, lower, upper, alpha=0.2, color='tab:cyan', edgecolor='none')
+            if len(y_errs):
+                ax.errorbar(x_vals, y_vals, yerr=y_errs, marker='o', color=color, capsize=2, capthick=.5, linewidth=.5, linestyle='none', markerfacecolor='none')
+            else:
+                ax.plot(x_vals, y_vals, marker='o', color=color, markersize=5, markeredgewidth=.5, linestyle='none', markerfacecolor='none')
+
+            if legend_label in ax_chosen_results:
+                tmin = ax_chosen_results[legend_label]
+                ax.axvline(x=tmin+disps[legend_label_i], color='k', linestyle='--')
+
+                if len(y_errs):
+                    xmin, xmax = ax.get_xlim()
+                    x = np.linspace(xmin, xmax, 100)
+
+                    upper = tmins_dict[tmin].mean + tmins_dict[tmin].sdev
+                    lower = tmins_dict[tmin].mean - tmins_dict[tmin].sdev
+                    ax.fill_between(x, lower, upper, alpha=0.1, color='tab:cyan', edgecolor='none')
+
+                else:
+                    ax.axhline(y=tmins_cit[tmin].mean, color='k', linestyle='--')
+
+    axes[0].legend(handles=legend_elements)
 
     plt.tight_layout(pad=0.80)
     plt.savefig(plot_file)

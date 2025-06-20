@@ -8,7 +8,7 @@ import multiprocessing
 import multiprocessing.shared_memory
 import threadpoolctl
 
-from qcd_analysis import data_handler
+from qcd_analysis.data_handling import data_handler
 
 #NUM_PROCESSES = 2 if multiprocessing.cpu_count() <= 16 else multiprocessing.cpu_count() // 8
 NUM_PROCESSES = multiprocessing.cpu_count() // 2
