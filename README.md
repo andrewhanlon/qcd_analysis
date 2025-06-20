@@ -15,8 +15,8 @@ Then, you can perform fits and/or make plots with these objects.
 1. Clone the repository and change into the highest-level directory within the reposoitory, e.g.
 
 ```bash
->>> git clone https://github.com/andrewhanlon/qcd_analysis.git
->>> cd qcd_analysis
+git clone https://github.com/andrewhanlon/qcd_analysis.git
+cd qcd_analysis
 ```
 
 2. Install using pip
