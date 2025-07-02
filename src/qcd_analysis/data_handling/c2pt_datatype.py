@@ -411,6 +411,7 @@ class C2ptMatrixData:
         self._raw_corr_mat = raw_corr_mat
 
     def remove_operator_indices(self, op_indices):
+        ...
 
 
     def is_hermitian(self):
