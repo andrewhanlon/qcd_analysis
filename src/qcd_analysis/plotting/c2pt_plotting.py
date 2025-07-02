@@ -138,41 +138,6 @@ def plot_effective_energy_with_fit(plot_file, corr, fitter, print_params={}, dt=
     plt.close()
 
 
-
-def plot_dispersion(plot_file, energies, Ns):
-    fig, ax = plt.subplots()
-    plt.xlabel(r"$\bigg(\frac{L}{2\pi})\bigg)^2 P^2$")
-    plt.ylabel(r'$E(P^2)$')
-    ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
-
-    m0 = energies[0].mean
-    p_range = np.linspace(0, max(energies.keys()), 500)
-    cont_energies = list()
-    for p in p_range:
-        cont_energies.append(np.sqrt(m0**2 + (2*np.pi*p/Ns)**2))
-    cont_energies = np.array(cont_energies)
-
-    x_vals = list()
-    y_vals = list()
-    y_errs = list()
-    for px, energy in energies.items():
-        x_vals.append(px)
-        y_vals.append(energy.mean)
-        y_errs.append(energy.sdev)
-
-    plt.errorbar(x_vals, y_vals, yerr=y_errs, marker='o', color='k', capsize=2, capthick=.5, lw=.5, ls='none', markerfacecolor='none')
-    plt.plot(p_range, cont_energies, color='k', lw=.5)
-
-    plt.tight_layout(pad=0.80)
-
-    plt.savefig(plot_file)
-
-    pickle_file, _ = os.path.splitext(plot_file)
-    with open(f"{pickle_file}.pkl", "wb") as fh:
-        pickle.dump(fig, fh)
-
-    plt.close()
-
 def plot_tmin(plot_file, results, height_ratios, chosen_results={}):
     """
     Args:
@@ -183,7 +148,7 @@ def plot_tmin(plot_file, results, height_ratios, chosen_results={}):
     """
 
     num_subplots = len(results)
-    fig, axes = plt.subplots(num_subplots, 1, sharex=True, gridspec_kw={'height_ratios': height_ratios})
+    fig, axes = plt.subplots(num_subplots, 1, sharex=True, height_ratios=height_ratios)
 
     plt.xlabel(r"$t_{\rm min}$")
 
@@ -197,7 +162,7 @@ def plot_tmin(plot_file, results, height_ratios, chosen_results={}):
         ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
         ax.set_ylabel(ax_label)
 
-        disps = np.linspace(-.2, .2, len(legends_dict))
+        disps = np.linspace(-.35, .35, len(legends_dict))
 
         ax_chosen_results = {} if ax_label not in chosen_results else chosen_results[ax_label]
 
@@ -232,12 +197,14 @@ def plot_tmin(plot_file, results, height_ratios, chosen_results={}):
                 ax.axvline(x=tmin+disps[legend_label_i], color='k', linestyle='--')
 
                 if len(y_errs):
-                    xmin, xmax = ax.get_xlim()
-                    x = np.linspace(xmin, xmax, 100)
+                    ax_xmin, ax_xmax = ax.get_xlim()
+                    x = np.linspace(ax_xmin, ax_xmax, 100)
 
                     upper = tmins_dict[tmin].mean + tmins_dict[tmin].sdev
                     lower = tmins_dict[tmin].mean - tmins_dict[tmin].sdev
                     ax.fill_between(x, lower, upper, alpha=0.1, color='tab:cyan', edgecolor='none')
+
+                    ax.set_xlim(ax_xmin, ax_xmax)
 
                 else:
                     ax.axhline(y=tmins_cit[tmin].mean, color='k', linestyle='--')

@@ -23,22 +23,6 @@ def set_to_jackknife():
     SAMPLING_MODE = SamplingMode.JACKKNIFE
     BOOTSTRAPS = None
 
-'''
-def set_to_bootstrap(num_confs, rebin, num_samples, seed, skip=0):
-    global SAMPLING_MODE, NUM_SAMPLES, BOOTSTRAPS
-    SAMPLING_MODE = SamplingMode.BOOTSTRAP
-    num_bins = num_confs // rebin
-    BOOTSTRAPS = np.zeros((num_samples, num_bins), dtype=np.int32)
-    random.seed(seed)
-    for samp_i in range(num_samples):
-        for _ in range(num_bins):
-            for skip_i in range(skip):
-                random.randrange(num_bins)
-            bin_i = random.randrange(num_bins)
-            BOOTSTRAPS[samp_i,bin_i] += 1
-
-    NUM_SAMPLES = BOOTSTRAPS.shape[0]
-'''
 def set_to_bootstrap(num_confs, rebin, num_samples, seed, skip=0):
     global SAMPLING_MODE, NUM_SAMPLES, BOOTSTRAPS
     SAMPLING_MODE = SamplingMode.BOOTSTRAP
@@ -116,7 +100,6 @@ class Data:
             self._samples[1:] = np.random.normal(gvar_data.mean, gvar_data.sdev, num_samples)
 
     def _create_samples(self):
-        #import time
         num_bins = len(self._bins)
         rebin = get_rebin()
         num_rebin_bins = num_bins // rebin
@@ -151,7 +134,6 @@ class Data:
 
             self._samples = np.zeros(num_samples+1, dtype=rebin_bins.dtype)
             self._samples[0] = ensemble_sum / num_rebin_bins
-            #start = time.time()
             for sample_i in range(num_samples):
                 boots_map = BOOTSTRAPS[sample_i,:]
                 sample_ave = 0.
@@ -159,7 +141,6 @@ class Data:
                     sample_ave += rebin_bins[boots_map[rebin_i]]
 
                 self._samples[sample_i+1] = sample_ave / num_rebin_bins
-            #print(time.time() - start)
 
 
     @property
@@ -182,24 +163,19 @@ class Data:
         return self.samples[0]
 
     def sample_average(self):
-        ave = 0.
-        for sample in self.samples[1:]:
-            ave += sample
+        return np.mean(self.samples[1:])
 
-        return ave / self.num_samples
-
-    def error(self):
+    def error(self, asymmetric=False):
         if SAMPLING_MODE == SamplingMode.JACKKNIFE:
-            return (self.num_samples - 1)**0.5 * np.std(self.samples[1:])
+            return (self.num_samples - 1)**0.5 * np.std(self.samples[1:], ddof=0, mean=self.samples[0])
 
-        else:
-            '''
+        elif asymmetric:
             sorted_samples = np.sort(self.samples[1:])
             percentile_index = int(round(self.num_samples * 0.16))
             error = (self.samples[0] - sorted_samples[percentile_index], sorted_samples[-percentile_index] - self.samples[0])
             return (error[0], error[1])
-            '''
-            #return np.std(self.samples[1:], ddof=1, mean=self.samples[0])
+
+        else:
             return np.std(self.samples[1:], ddof=1)
 
     def invert_samples(self):
@@ -295,6 +271,16 @@ class Data:
     def __neg__(self):
         return Data(-self.samples)
 
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return np.array_equal(self.samples, other.samples)
+        else:
+            return False
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+
     @property
     def real(self):
         return Data(self.samples.real)
@@ -333,33 +319,15 @@ class DataType(metaclass=abc.ABCMeta):
     def num_samples(self):
         pass
 
+    @property
     @abc.abstractmethod
-    def get_independent_data(self):
-        pass
-
-    @abc.abstractmethod
-    def get_organized_independent_data(self):
+    def independent_variables_values(self):
         pass
 
     @property
+    @abc.abstractmethod
     def num_data(self):
-        return len(self.get_organized_independent_data())
-
-    def get_covariance_lsqfit(self, correlated=True):
-        samples = self.samples
-
-        if get_sampling_mode() == SamplingMode.JACKKNIFE:
-            cov_factor = 1. - 1./self.num_samples
-        else:
-            cov_factor = 1./(self.num_samples - 1)
-
-        #diffs = samples[1:,:] - samples[0,:]
-        diffs = samples[1:,:] - np.mean(samples[1:,:], axis=0)
-
-        if correlated:
-            return cov_factor * np.tensordot(diffs.conj(), diffs, axes=(0,0))
-        else:
-            return cov_factor * np.diag(np.einsum('ij,ji->i', diffs.conj().T, diffs))
+        pass
 
     def set_covariance(self, uncorrelated=False, remove_correlations=[]):
         samples = self.samples
@@ -369,7 +337,6 @@ class DataType(metaclass=abc.ABCMeta):
         else:
             cov_factor = 1./(self.num_samples - 1)
 
-        #diffs = samples[1:,:] - samples[0,:]
         diffs = samples[1:,:] - np.mean(samples[1:,:], axis=0)
         cov = cov_factor * np.tensordot(diffs.conj(), diffs, axes=(0,0))
 
@@ -401,7 +368,7 @@ class DataType(metaclass=abc.ABCMeta):
 
 
     def get_residuals(self, samp_i, fit_func, params):
-        residuals = fit_func(self.get_independent_data(), params) - self.samples[samp_i,:]
+        residuals = fit_func(self.independent_variables_values, params) - self.samples[samp_i,:]
         if fit_func.num_priors:
             priored_residuals = fit_func.get_priored_residuals(params, samp_i)
             residuals = np.concatenate((residuals, priored_residuals))
@@ -461,22 +428,13 @@ class MultiDataType(DataType):
     def num_samples(self):
         return self._data_types[0].num_samples
 
-    def get_independent_data(self):
-        indep_data_list = list()
+    @property
+    def independent_variables_values(self):
+        indep_var_list = list()
         for data_type in self._data_types:
-            indep_data_list.append(data_type.get_independent_data())
+            indep_var_list.append(data_type.independent_variables_values)
 
-        #return np.concatenate(indep_data_list)
-        return indep_data_list
-
-    def get_organized_independent_data(self):
-        indep_data_list = list()
-        for data_type in self._data_types:
-            indep_data_list.append(data_type.get_organized_independent_data())
-
-        #return np.concatenate(indep_data_list)
-        return indep_data_list
-
+        return indep_var_list
 
 class Prior:
     def __init__(self, prior, scale=1):
@@ -752,6 +710,30 @@ class MultiFitFunction(FitFunction):
 
     def test_function(self, x, p):
         """
+        Args:
+          x: list of size of self.fit_functions
+          p: list of param values
+
+        Return:
+          list of size equal to total elements in x
+        """
+
+        x_start_i = 0
+        function_values = np.zeros(sum([d.size for d in x]))
+        for data, fit_func in zip(x, self.fit_functions):
+            param_values = list()
+            for param in fit_func.params:
+                param_values.append(p[self.params.index(param)])
+
+            function_values[x_start_i:x_start_i+len(data)] = fit_func(data, param_values)
+            x_start_i += len(data)
+
+        return function_values
+
+    def new_test_function(self, x, p):
+        """
+        Notes:
+            Check if fit_functions size is one. If it is, 
         Args:
           x: list of size of self.fit_functions
           p: list of param values

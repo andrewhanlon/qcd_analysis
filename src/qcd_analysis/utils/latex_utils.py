@@ -6,18 +6,20 @@ from qcd_analysis.plotting import c2pt_plotting
 def create_spectrum_doc(pdf_dir, title, ):
     ...
 
-def create_raw_data_doc(pdf_dir, title, channels):
+def create_raw_data_doc(pdf_dir, title, diagonal_correlators, off_diagonal_correlators={}):
     """
     Args:
         title (str) - title for document
-        channels (dict) - {str: list[correlators]}
+        diagonal_correlators (dict) - {str: list[correlators]}: Sets of diagonal correlators.
+            the key is the name for the list of correlators
+        off_diagonal_correlators (dict) - {str: list[correlators]}: Sets of off-diagonal correlators.
+            the key is the name for the list of correlators
     """ 
 
     doc = create_doc(title)
-
     fig_dir = os.path.join(pdf_dir, "plots")
 
-    for channel_name, corr_list in channels.items():
+    for channel_name, corr_list in diagonal_correlators.items():
         channel_dir = os.path.join(fig_dir, channel_name.replace(' ', '_'))
         os.makedirs(channel_dir, exist_ok=True)
         with doc.create(pylatex.Section(channel_name)):
@@ -25,14 +27,56 @@ def create_raw_data_doc(pdf_dir, title, channels):
                 with doc.create(pylatex.Subsection(corr.data_name)):
                     add_correlator(doc, corr, pdf_dir, channel_dir) 
 
+            if channel_name in off_diagonal_correlators:
+                with doc.create(pylatex.Subsection("Off-diagonal correlators")):
+                    for corr in off_diagonal_correlators[channel_name]:
+                        with doc.create(pylatex.Subsubsection(corr.data_name)):
+                            add_correlator(doc, corr, pdf_dir, channel_dir) 
+
     pdf_filename = os.path.join(pdf_dir, title)
     compile_pdf(doc, pdf_filename)
 
+
+def create_gevp_data_doc(pdf_dir, title, operators, rot_diagonal_correlators, rot_off_diagonal_correlators={}, rot_ratios={}, overlaps={}):
+    """
+    Args:
+        title (str) - title for document
+        operators (dict) - {str: list[operators]}
+        rot_diagonal_correlators (dict) - {str: list[correlators]}: Sets of diagonal correlators.
+            the key is the name for the list of correlators
+        rot_off_diagonal_correlators (dict) - {str: list[correlators]}: Sets of off-diagonal correlators.
+            the key is the name for the list of correlators
+        rot_ratios (dict) - {str: str: [single_correlator_list]}
+        overlaps (dict) - {str: 
+    """ 
+
+    doc = create_doc(title)
+    fig_dir = os.path.join(pdf_dir, "plots")
+
+    for channel_name, operator_list in operators.items():
+        channel_dir = os.path.join(fit_dir, channel_name.replace(' ', '_'))
+        os.makedirs(channel_dir, exist_ok=True)
+        with doc.create(pylatex.Section(channel_name)):
+
+
+
+
+    add_raw_data(doc, pdf_dir, fig_dir, diagonal_correlators, off_diagonal_correlators, False)
+
+    pdf_filename = os.path.join(pdf_dir, title)
+    compile_pdf(doc, pdf_filename)
 
 
 ###################################################################################################
 #     Helper Utilities
 ###################################################################################################
+
+
+def compile_pdf(doc, filename, compiler=None):
+    doc.generate_tex(filename)
+    doc.generate_pdf(filename, clean=False, clean_tex=False, compiler=compiler, compiler_args=['-synctex=1'])
+    doc.generate_pdf(filename, clean=True, clean_tex=False, compiler=compiler, compiler_args=['-synctex=1'])
+    
 
 def create_doc(title):
     doc = pylatex.Document(geometry_options={'margin': '1.5cm'})
@@ -146,9 +190,3 @@ def add_image(figure, latex_dir, pdf_file, width="1.0", caption="", view=True):
     if caption:
         figure.add_caption(pylatex.NoEscape(caption))
 
-
-def compile_pdf(doc, filename, compiler=None):
-    doc.generate_tex(filename)
-    doc.generate_pdf(filename, clean=False, clean_tex=False, compiler=compiler, compiler_args=['-synctex=1'])
-    doc.generate_pdf(filename, clean=True, clean_tex=False, compiler=compiler, compiler_args=['-synctex=1'])
-    

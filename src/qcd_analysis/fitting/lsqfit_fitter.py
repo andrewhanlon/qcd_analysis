@@ -249,26 +249,6 @@ class Fitter:
                     else:
                         self._params[param_name] = fit_params[param_name]
 
-        '''
-        chol_cov = scipy.linalg.cholesky(fit_info.cov, lower=True)
-        residues = np.empty(self.num_data, dtype=fit_info.samples.dtype)
-        mean_params = self.params_sample(0)
-        for d_i, independent_data_point in enumerate(self.data_type.get_organized_independent_data()):
-          residues[d_i] = self.fit_function(independent_data_point, mean_params) - fit_info.samples[0,d_i]
-
-        self._chi2_data = scipy.linalg.norm(scipy.linalg.solve_triangular(chol_cov, residues, lower=True, check_finite=False))**2
-
-        if resamplings:
-          self._resampling_chi2_data = np.empty(self.data_type.num_samples+1, dtype=np.float64)
-          self._resampling_chi2_data[0] = self._chi2_data
-          for sample_i in range(1, self.data_type.num_samples+1):
-            sample_params = self.params_sample(sample_i)
-            for d_i, independent_data_point in enumerate(self.data_type.get_organized_independent_data()):
-              residues[d_i] = self.fit_function(independent_data_point, sample_params) - fit_info.samples[sample_i,d_i]
-
-            self._resampling_chi2_data[sample_i] = scipy.linalg.norm(scipy.linalg.solve_triangular(chol_cov, residues, lower=True, check_finite=False))**2
-        '''
-
         release_shared_data(fit_info.fit_data.name)
         release_shared_data(fit_info.fit_chi2.name)
         release_shared_data(fit_info.fit_Q.name)

@@ -77,53 +77,55 @@ class Fitter:
         """
 
         # get args
-        try:
-            if self.input_data.num_data <= 0:
-                print(f"ndat <= 0; fit failed")
-                return False
+        #try:
+        if self.input_data.num_data <= 0:
+            print(f"ndat <= 0; fit failed")
+            return False
 
-            self._dof = self.input_data.num_data - self.fit_function.num_params + self.fit_function.num_priors
+        self._dof = self.input_data.num_data - self.fit_function.num_params + self.fit_function.num_priors
 
-            if self._dof <= 0:
-                print(f"invalid dof={self._dof}, ndat={self.input_data.num_data}, nparams={self.fit_function.num_params}, npriors={self.fit_function.num_priors}; fit failed")
-                return False
+        if self._dof <= 0:
+            print(f"invalid dof={self._dof}, ndat={self.input_data.num_data}, nparams={self.fit_function.num_params}, npriors={self.fit_function.num_priors}; fit failed")
+            return False
 
-            self.input_data.set_covariance(uncorrelated)
+        self.input_data.set_covariance(uncorrelated)
 
-            init_guesses_flat = list()
-            for param in self.fit_function.params:
-                init_guesses_flat.append(self.init_guesses[param])
+        init_guesses_flat = list()
+        for param in self.fit_function.params:
+            init_guesses_flat.append(self.init_guesses[param])
 
-            # construct result data structures
-            data_shape = (self.input_data.num_samples+1, len(init_guesses_flat))
-            fit_data_sh = get_shared_data(data_shape)
+        # construct result data structures
+        data_shape = (self.input_data.num_samples+1, len(init_guesses_flat))
+        fit_data_sh = get_shared_data(data_shape)
 
-            # do fit
-            with threadpoolctl.threadpool_limits(limits=1, user_api='blas'):
-                fit_results_mean = fit_sample(0, fit_data_sh, self.input_data, self.fit_function, init_guesses_flat, **kwargs)
+        # do fit
+        with threadpoolctl.threadpool_limits(limits=1, user_api='blas'):
+            fit_results_mean = fit_sample(0, fit_data_sh, self.input_data, self.fit_function, init_guesses_flat, **kwargs)
 
-                self._chi2 = 2.*fit_results_mean.cost
-                init_guesses_flat = fit_results_mean.x
+            self._chi2 = 2.*fit_results_mean.cost
+            init_guesses_flat = fit_results_mean.x
 
-                with multiprocessing.Pool(processes=NUM_PROCESSES) as pool:
-                    pool.starmap(fit_sample, zip(list(range(1, self.input_data.num_samples+1)),
-                                                 itertools.repeat(fit_data_sh),
-                                                 itertools.repeat(self.input_data),
-                                                 itertools.repeat(self.fit_function),
-                                                 itertools.repeat(init_guesses_flat)))
+            with multiprocessing.Pool(processes=NUM_PROCESSES) as pool:
+                pool.starmap(fit_sample, zip(list(range(1, self.input_data.num_samples+1)),
+                                             itertools.repeat(fit_data_sh),
+                                             itertools.repeat(self.input_data),
+                                             itertools.repeat(self.fit_function),
+                                             itertools.repeat(init_guesses_flat)))
 
 
-            # get results
-            fit_data = np.copy(np.ndarray(shape=data_shape, dtype=np.float64, buffer=fit_data_sh.buf))
-            self._params = dict()
-            for param_i, param in enumerate(self.fit_function.params):
-                self._params[param] = data_handler.Data(fit_data[:,param_i])
+        # get results
+        fit_data = np.copy(np.ndarray(shape=data_shape, dtype=np.float64, buffer=fit_data_sh.buf))
+        self._params = dict()
+        for param_i, param in enumerate(self.fit_function.params):
+            self._params[param] = data_handler.Data(fit_data[:,param_i])
 
-            release_shared_data(fit_data_sh.name)
+        release_shared_data(fit_data_sh.name)
 
+        '''
         except Exception as e:
             print(f"Fit failed: {e}")
             return False
+        '''
 
         return True
 

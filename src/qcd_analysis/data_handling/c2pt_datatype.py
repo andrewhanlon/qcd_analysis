@@ -15,22 +15,18 @@ from qcd_analysis.models import c2pt_models
 
 class C2ptData(data_handler.DataType):
 
-    def __init__(self, data, snk_operator, src_operator, normalize=False):
+    def __init__(self, data, snk_operator, src_operator):
+        """
+        Args:
+            data (dict) - {tsep: data_handler.Data}: The correlator data.
+            snk_operator (str) - a label for the sink operator
+            src_operator (str) - a label for the source operator
+        """
 
         self.ratio = False
 
         self.snk_operator = snk_operator
         self.src_operator = src_operator
-
-        self.normalization = 1.
-
-        if normalize:
-            normalize_tsep = min(data.keys()) + 1
-            normalization = np.abs(data[normalize_tsep].mean)
-            for tsep in data.keys():
-                data[tsep] = (1./normalization) * data[tsep]
-
-            self.normalization = normalization
 
         self._data = data
     
@@ -43,21 +39,19 @@ class C2ptData(data_handler.DataType):
 
     @property
     def samples(self):
-        _samples = list()
-        for tsep_data in self._data.values():
-            _samples.append(tsep_data.samples)
-
-        return np.array(_samples).T
+        return np.stack([d.samples for d in self._data.values()], axis=-1)
 
     @property
     def num_samples(self):
         return list(self._data.values())[0].num_samples
 
-    def get_independent_data(self):
+    @property
+    def independent_variables_values(self):
         return np.array(list(self._data.keys()))
 
-    def get_organized_independent_data(self):
-        return self.get_independent_data()
+    @property
+    def num_data(self):
+        return len(self._data.keys())
 
 
     @property
@@ -67,11 +61,8 @@ class C2ptData(data_handler.DataType):
     def items(self):
         return self.data.items()
 
-    def __call__(self, tsep, normalize=True):
-        if normalize:
-            return self[tsep]
-        else:
-            return self.normalization * self[tsep]
+    def __call__(self, tsep):
+        return self[tsep]
 
     def __getitem__(self, tsep):
         return self.data[tsep]
@@ -79,6 +70,80 @@ class C2ptData(data_handler.DataType):
     def __contains__(self, tsep):
         return tsep in self.data
 
+    def log(self):
+        return Data(np.log(self.samples))
+
+    def sqrt(self):
+        return Data(np.sqrt(self.samples))
+
+    def conj(self):
+        return Data(np.conj(self.samples))
+
+    def __add__(self, other):
+        if isinstance(other, self.__class__):
+            return Data(self.samples + other.samples)
+        return Data(self.samples + other)
+
+    def __radd__(self, other):
+        if isinstance(other, self.__class__):
+            return Data(other.samples + self.samples)
+        return Data(other + self.samples)
+
+    def __sub__(self, other):
+        if isinstance(other, self.__class__):
+            return Data(self.samples - other.samples)
+        return Data(self.samples - other)
+
+    def __rsub__(self, other):
+        if isinstance(other, self.__class__):
+            return Data(other.samples - self.samples)
+        return Data(other - self.samples)
+
+    def __mul__(self, other):
+        if isinstance(other, self.__class__):
+            return Data(self.samples * other.samples)
+        return Data(self.samples * other)
+
+    def __rmul__(self, other):
+        if isinstance(other, self.__class__):
+            return Data(other.samples * self.samples)
+        return Data(other * self.samples)
+
+    def __truediv__(self, other):
+        if isinstance(other, self.__class__):
+            return Data(self.samples / other.samples)
+        return Data(self.samples / other)
+
+    def __rtruediv__(self, other):
+        if isinstance(other, self.__class__):
+            return Data(other.samples / self.samples)
+        return Data(other / self.samples)
+
+    def __pow__(self, other):
+        return Data(pow(self.samples, other))
+
+    def __rpow__(self, other):
+        return Data(pow(other, self.samples))
+
+    def __neg__(self):
+        new_data = dict()
+        return Data(-self.samples)
+
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            if self.tseps != other.tseps:
+                return False
+
+            for tsep in self.tseps:
+                if not self(tsep) == other(tsep):
+                    return False
+
+            return True
+        else:
+            return False
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     @property
     def tseps(self):
@@ -233,28 +298,7 @@ class C2ptData(data_handler.DataType):
 
         return new_obj
 
-    '''
-      TODO: what should be returned for num_exps > 1 ?
-    '''
-    '''
-      old
-    def get_amplitude(self, non_int_corrs, tmin, tmax, tmax_rel_error, num_exps):
-        if non_int_corrs:
-            self = self.get_ratio_correlator(non_int_corrs)
-            non_int_amps = list()
-            for non_int_corr in non_int_corrs:
-                non_int_amps.append(non_int_corr.get_amplitude([], tmin, tmax, tmax_rel_error, num_exps))
-
-        log_amps = not non_int_corrs
-
-        fit_result = self.do_fit(num_exps, log_amps, tmin, tmax, tmax_rel_error)
-
-        if non_int_corrs:
-            return fit_result.param('A0') * np.prod(non_int_amps)
-        else:
-            return fit_result.param('A0')
-    '''
-    def get_amplitude(self, non_int_corrs, tmin, tmax, tmax_rel_error, num_exps):
+    def get_amplitude(self, tmin, tmax, tmax_rel_error, num_exps, non_int_corrs=[]):
         fit_data = self.remove_data(tmin, tmax, tmax_rel_error)
         if non_int_corrs:
             fit_data = fit_data.get_ratio_correlator(non_int_corrs)
@@ -282,10 +326,10 @@ class C2ptData(data_handler.DataType):
 
 class C2ptMatrixData:
 
-    def __init__(self, corr_mat, norm_time=None, hermitian=False):
-        self._corr_mat = corr_mat
+    def __init__(self, corr_mat, norm_time=None, make_hermitian=True):
+        self._init_corr_mat = corr_mat
         self._norm_time = norm_time
-        self._hermitian = hermitian
+        self._make_hermitian = make_hermitian
         self._setup()
 
     def _setup(self):
@@ -297,11 +341,11 @@ class C2ptMatrixData:
         for i in range(self.N):
             self.operators.append(self._corr_mat[i,i].snk_operator)
 
-        if self._hermitian:
+        if self._make_hermitian:
             for i in range(self.N):
                 for j in range(i+1):
-                    tseps_ij = set(self._corr_mat[i,j].get_independent_data())
-                    tseps_ji = set(self._corr_mat[j,i].get_independent_data())
+                    tseps_ij = set(self._corr_mat[i,j].independent_variables_values)
+                    tseps_ji = set(self._corr_mat[j,i].independent_variables_values)
                     tseps = tseps_ij | tseps_ji
                     if tsep_min is None or tsep_min < min(tseps):
                         tsep_min = min(tseps)
@@ -329,12 +373,13 @@ class C2ptMatrixData:
 
                     self._corr_mat[i,j] = C2ptData(new_data_ij_dict, self.operators[i], self.operators[j])
                     self._corr_mat[j,i] = C2ptData(new_data_ji_dict, self.operators[j], self.operators[i])
+                self._corr_mat[i,i] = self._corr_mat[i,i].real
 
 
         else:
             for i in range(self.N):
                 for j in range(self.N):
-                    tseps = self._corr_mat[i,j].get_independent_data()
+                    tseps = self._corr_mat[i,j].independent_variables_values
                     if tsep_min is None or tsep_min < min(tseps):
                         tsep_min = min(tseps)
                     if tsep_max is None or tsep_max > max(tseps):
@@ -365,11 +410,36 @@ class C2ptMatrixData:
 
         self._raw_corr_mat = raw_corr_mat
 
+    def remove_operator_indices(self, op_indices):
+
+
+    def is_hermitian(self):
+        for i in range(self.N):
+            for j in range(i, self.N):
+                if self._corr_mat[i,j] != self._corr_mat[j,i].conj():
+                    return False
+        return True
+
     def get_correlator_set(self):
         corrs = list()
         for i in range(self.N):
             corrs.append(self._corr_mat[i, i])
 
+        for i in range(self.N):
+            for j in range(i+1, self.N):
+                corrs.append(self._corr_mat[i, j])
+
+        return corrs
+    
+    def get_diagonal_correlator_set(self):
+        corrs = list()
+        for i in range(self.N):
+            corrs.append(self._corr_mat[i, i])
+
+        return corrs
+
+    def get_off_diagonal_correlator_set(self):
+        corrs = list()
         for i in range(self.N):
             for j in range(i+1, self.N):
                 corrs.append(self._corr_mat[i, j])
@@ -385,7 +455,7 @@ class C2ptMatrixData:
 
 
 
-    def get_principal_correlators(self, t0=None, td=None, mean=True):
+    def get_principal_correlators(self, t0=None, td=None, mean=True, bypass_hermitian=False):
         """
         Args:
             t0 (int) - optional, if not given, then t0 is the smallest value that satisifies td/2 < t0 < td.
@@ -401,6 +471,12 @@ class C2ptMatrixData:
             No eigenvector pinning is implemented, so one should only use the defaults
             - Remove all this repeat to save on memory
         """
+
+        if not self._make_hermitian and not bypass_hermitian:
+            if not self.is_hermitian():
+                print("Correlator matrix must be Hermitian!")
+                sys.exit()
+
         self._t0 = t0
         self._td = td
         self._mean = mean
@@ -573,6 +649,21 @@ class C2ptMatrixData:
                 rank += 1
 
         return energy_to_ops_map
+    
+
+    def get_amplitudes(self, tmin, tmax, tmax_rel_error, num_exps, non_int_corrs=None):
+        amplitudes = list()
+        for n in range(self.N):
+            corr_En = self[n,n].real
+            tmax = max(corr_En.tseps)
+            if non_int_corrs is not None:
+                amplitude = corr_En.get_amplitude(tmin, tmax, tmax_rel_error, num_exps, non_int_corrs[n])
+            else:
+                amplitude = corr_En.get_amplitude(tmin, tmax, tmax_rel_error, num_exps)
+
+            amplitudes.append(amplitude.samples)
+
+        amplitudes = np.array(amplitudes)
 
     '''
     def get_principal_correlators_from_ev(self, t0, td, mean):
