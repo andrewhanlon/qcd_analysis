@@ -327,7 +327,7 @@ class C2ptData(data_handler.DataType):
 class C2ptMatrixData:
 
     def __init__(self, corr_mat, norm_time=None, make_hermitian=True):
-        self._init_corr_mat = corr_mat
+        self._corr_mat = corr_mat
         self._norm_time = norm_time
         self._make_hermitian = make_hermitian
         self._setup()

@@ -14,7 +14,7 @@ from qcd_analysis.data_handling import data_handler
 NUM_PROCESSES = multiprocessing.cpu_count() // 2
 
 def get_shared_data(shape):
-    d_size = np.dtype(np.float64).itemsize * np.prod(shape)
+    d_size = int(np.dtype(np.float64).itemsize * np.prod(shape))
     shm = multiprocessing.shared_memory.SharedMemory(create=True, size=d_size)
     return shm
 
