@@ -4,8 +4,6 @@ import numpy as np
 
 from qcd_analysis.data_handling import data_handler
 
-
-
 def C2ptModel(model_name):
     model_name_tokens = model_name.split('_')
 
@@ -185,30 +183,23 @@ class C2ptThermalModel(data_handler.FitFunction):
 
 class C2ptSingleHadronConspiracyModel(data_handler.FitFunction):
 
-    def __init__(self, num_single_hadron_states, particle=''):
+    def __init__(self, num_single_hadron_states, particle=1):
         self.num_single_hadron_states = num_single_hadron_states
         self.particle = particle
 
     @property
     def fit_name(self):
-        return f"single-hadron-conspiracy_{self.num_single_hadron_states}-exp-single-hadron{self.particle}"
-
-    @property
-    def particle_str(self):
-        if self.particle:
-            return f"({self.particle})"
-        else:
-            return self.particle
+        return f"single-hadron-conspiracy_{self.num_single_hadron_states}-states-single-hadron{self.particle}"
 
     @property
     def params(self):
-        _params = [f'E{self.particle_str}0']
+        _params = [f'E({self.particle})0']
         for i in range(1, self.num_single_hadron_states):
-            _params.append(f'DE{self.particle_str}{i},{i-1}')
+            _params.append(f'DE({self.particle}){i},{i-1}')
 
-        _params.append(f'A{self.particle_str}0')
+        _params.append(f'A({self.particle})0')
         for i in range(1, self.num_single_hadron_states):
-            _params.append(f'r{self.particle_str}{i}')
+            _params.append(f'r({self.particle}){i}')
 
         return _params
 
@@ -216,11 +207,11 @@ class C2ptSingleHadronConspiracyModel(data_handler.FitFunction):
     def function(self, x, p):
         f = 1.
         for i in range(1, self.num_single_hadron_states):
-            fi = p[f'r{self.particle_str}{i}']
+            fi = p[f'r({self.particle}){i}']
             for j in range(i):
-                fi *= np.exp(-p[f'DE{self.particle_str}{j+1},{j}']*x)
+                fi *= np.exp(-p[f'DE({self.particle}){j+1},{j}']*x)
             f += fi
-        f *= p[f'A{self.particle_str}0']*np.exp(-p[f'E{self.particle_str}0']*x)
+        f *= p[f'A({self.particle})0']*np.exp(-p[f'E({self.particle})0']*x)
         return f
 
 
@@ -228,146 +219,234 @@ class C2ptSingleHadronConspiracyModel(data_handler.FitFunction):
         init_guesses_dict = dict()
 
         eff_energy = c2pt_data.get_effective_energy(1)[tsep + 0.5]
-        init_guesses_dict[f'E{self.particle_str}0'] = eff_energy.mean
+        init_guesses_dict[f'E({self.particle})0'] = eff_energy.mean
 
         eff_amp = np.exp(eff_energy*tsep) * c2pt_data(tsep).real
-        init_guesses_dict[f'A{self.particle_str}0'] = eff_amp.mean
+        init_guesses_dict[f'A({self.particle})0'] = eff_amp.mean
 
         for param in self.params:
-            if param == f'E{self.particle_str}0' or param == f'A{self.particle_str}0':
+            if param == f'E({self.particle})0' or param == f'A({self.particle})0':
                 continue
 
             init_guesses_dict[param] = .1
 
         return init_guesses_dict
+
+    def get_priors(self, c2pt_data, tsep, gap):
+        priors_dict = dict()
+
+        eff_energy = c2pt_data.get_effective_energy(1)[tsep + 0.5]
+        priors_dict[f'E({self.particle})0'] = data_handler.Prior((eff_energy.mean, eff_energy.mean*.1))
+
+        eff_amp = np.exp(eff_energy*tsep) * c2pt_data(tsep).real
+        priors_dict[f'A({self.particle})0'] = data_handler.Prior((eff_amp.mean, eff_amp.mean*.1))
+
+        for i in range(1, self.num_single_hadron_states):
+            priors_dict[f'DE({self.particle}){i},{i-1}'] = data_handler.Prior((gap, gap/2.))
+
+        for i in range(1, self.num_single_hadron_states):
+            priors_dict[f'r({self.particle}){i}'] = data_handler.Prior((1., .25))
+
+        return priors_dict
 
 
 class C2ptTwoHadronConspiracyModel(data_handler.FitFunction):
 
-    def __init__(self, num_single_hadron_states, degenerate=False):
+    def __init__(self, num_single_hadron_states, particles):
+        if particles[0] == particles[1] and num_single_hadron_states[0] != num_single_hadron_states[1]:
+            print("If particles are equal, then they must have same number of states included")
+            sys.exit()
+
         self.num_single_hadron_states = num_single_hadron_states
-        self.degenerate = degenerate
+        self.particles = particles
 
     @property
     def fit_name(self):
+        '''
         if self.degenerate:
             return f"two-hadron-conspiracy_{self.num_single_hadron_states}-exp-deg-single-hadron"
         else:
             return f"two-hadron-conspiracy_{self.num_single_hadron_states}-exp-single-hadron"
+        '''
+        return f"two-hadron-conspiracy"
+
 
     @property
     def params(self):
-        if self.degenerate:
-            _params = []
-            for i in range(self.num_single_hadron_states):
-                for j in range(i+1):
-                    _params.append(f'dE{i},{j}')
+        part1 = self.particles[0]
+        part2 = self.particles[1]
 
-            _params.append('E0')
-            for i in range(1, self.num_single_hadron_states):
-                _params.append(f'DE{i},{i-1}')
+        _params = list()
+        if part1 == part2:
+            num_states = self.num_single_hadron_states[0]
+            for n in range(num_states):
+                for m in range(n+1):
+                    _params.append(f'dE{n},{m}')
 
-            _params.append('A0,0')
-            for i in range(1, self.num_single_hadron_states):
-                for j in range(i+1):
-                    _params.append(f'r{i},{j}')
+            for n in range(num_states):
+                for m in range(n+1):
+                    _params.append(f'rp{n},{m}')
+
+
+            _params.append(f'E({part1})0')
+            _params.append(f'A({part1})0')
+
+            for n in range(1, num_states):
+                _params.append(f'r({part1}){n}')
+
+            for n in range(1, num_states):
+                _params.append(f'DE({part1}){n},{n-1}')
 
         else:
-            _params = []
-            for i in range(self.num_single_hadron_states):
-                for j in range(self.num_single_hadron_states):
-                    _params.append(f'dE{i},{j}')
+            num_states1 = self.num_single_hadron_states[0]
+            num_states2 = self.num_single_hadron_states[0]
+            for n in range(num_states1):
+                for m in range(num_states2):
+                    _params.append(f'dE{n},{m}')
 
-            _params.append('E(1)0')
-            _params.append('E(2)0')
-            for i in range(1, self.num_single_hadron_states):
-                _params.append(f'DE(1){i},{i-1}')
-                _params.append(f'DE(2){i},{i-1}')
+            for n in range(num_states1):
+                for m in range(num_states2):
+                    _params.append(f'rp{n},{m}')
 
-            _params.append('A0,0')
-            for i in range(self.num_single_hadron_states):
-                for j in range(self.num_single_hadron_states):
-                    if i == 0 and j == 0:
-                        continue
-                    _params.append(f'r{i},{j}')
+
+            _params.append(f'E({part1})0')
+            _params.append(f'E({part2})0')
+            _params.append(f'A({part1})0')
+            _params.append(f'A({part2})0')
+
+            for n in range(1, num_states1):
+                _params.append(f'r({part1}){n}')
+            for m in range(1, num_states2):
+                _params.append(f'r({part2}){m}')
+
+            for n in range(1, num_states1):
+                _params.append(f'DE({part1}){n},{n-1}')
+            for m in range(1, num_states2):
+                _params.append(f'DE({part2}){m},{m-1}')
 
         return _params
 
 
-    def function(self, x, p):
-        f = 0.
-
-        for i1 in range(self.num_single_hadron_states):
-            for i2 in range(self.num_single_hadron_states):
-                if i1 == 0 and i2 == 0:
-                    f += 1.
-                else:
-                    if self.degenerate:
-                        if i1 > i2:
-                            fi = p[f'r{i1},{i2}']*np.exp(-p[f'dE{i1},{i2}'])
-                        else:
-                            fi = p[f'r{i2},{i1}']*np.exp(-p[f'dE{i2},{i1}'])
-                    else:
-                        fi = p[f'r{i1},{i2}']*np.exp(-p[f'dE{i1},{i2}'])
-
-                    for i in range(i1):
-                        if self.degenerate:
-                            fi *= np.exp(-p[f'DE{i+1},{i}']*x)
-                        else:
-                            fi *= np.exp(-p[f'DE(1){i+1},{i}']*x)
-                    for i in range(i2):
-                        if self.degenerate:
-                            fi *= np.exp(-p[f'DE{i+1},{i}']*x)
-                        else:
-                            fi *= np.exp(-p[f'DE(2){i+1},{i}']*x)
-                    f += fi
-
-        if self.degenerate:
-            f *= p['A0,0']*np.exp(-(2.*p['E0'] + p['dE0,0'])*x)
+    def function_prefactor(self, n, m, x, p):
+        part1 = self.particles[0]
+        part2 = self.particles[1]
+        if n == 0:
+            r1 = 1.
         else:
-            f *= p['A0,0']*np.exp(-(p['E(1)0'] + p['E(2)0'] + p['dE0,0'])*x)
+            r1 = p[f'r({part1}){n}']
 
+        if m == 0:
+            r2 = 1.
+        else:
+            r2 = p[f'r({part2}){m}']
+
+        if part1 == part2 and n < m:
+            fsub = p[f'rp{m},{n}']*np.exp(-p[f'dE{m},{n}']*x)*r1*r2
+        else:
+            fsub = p[f'rp{n},{m}']*np.exp(-p[f'dE{n},{m}']*x)*r1*r2
+
+        return fsub
+
+    def function(self, x, p):
+        part1 = self.particles[0]
+        part2 = self.particles[1]
+        f = 0.
+        for n in range(self.num_single_hadron_states[0]):
+            for m in range(self.num_single_hadron_states[1]):
+                fsub = self.function_prefactor(n, m, x, p)
+                for i in range(n):
+                    fsub *= np.exp(-p[f'DE({part1}){i+1},{i}']*x)
+                for j in range(m):
+                    fsub *= np.exp(-p[f'DE({part2}){j+1},{j}']*x)
+
+                f += fsub
+
+        f *= p[f'A({part1})0']*p[f'A({part2})0']*np.exp(-(p[f'E({part1})0'] + p[f'E({part2})0'])*x)
         return f
 
-    def get_init_guesses(self, c2pt_interacting, c2pt_noninteracting1, c2pt_noninteracting2):
-        """
-        Args: c2pt_interacting - 2-tuple: First element is data for interacting correlators.
-                                          Second element is tsep value to use
-              c2pt_noninteracting1 - 2-tuple: Same as above but for first particle
-              c2pt_noninteracting2 - 2-tuple: Same as above but for second particle
-        """
+
+    def get_init_guesses(self, c2pt_ratio_data, tsep):
         init_guesses_dict = dict()
-        ignore_params = list()
 
-        # get amplitude of interacting correlators
-        eff_energy = c2pt_interacting[0].get_effective_energy(1)[c2pt_interacting[1] + 0.5]
-        eff_amp = np.exp(eff_energy*c2pt_interacting[1]) * c2pt_interacting[0](c2pt_interacting[1]).real
-        init_guesses_dict['A0,0'] = eff_amp.mean
-        ignore_params.append('A0,0')
+        eff_energy = c2pt_ratio_data.get_effective_energy(1)[tsep + 0.5]
+        init_guesses_dict[f'dE{0},{0}'] = eff_energy.mean
 
-        # get effecitve energy from particles
-        eff_energy1 = c2pt_noninteracting1[0].get_effective_energy(1)[c2pt_noninteracting1[1] + 0.5]
-        if self.degenerate:
-            init_guesses_dict['E0'] = eff_energy1.mean
-            ignore_params.append('E0')
+        eff_amp = np.exp(eff_energy*tsep) * c2pt_ratio_data(tsep).real
+        init_guesses_dict[f'rp{0},{0}'] = eff_amp.mean
+
+        part1 = self.particles[0]
+        part2 = self.particles[1]
+
+        if part1 == part2:
+            num_states = self.num_single_hadron_states[0]
+            for n in range(num_states):
+                for m in range(n+1):
+                    if n == m == 0:
+                        continue
+                    init_guesses_dict[f'dE{n},{m}'] = 0.
+
+            for n in range(num_states):
+                for m in range(n+1):
+                    if n == m == 0:
+                        continue
+                    init_guesses_dict[f'rp{n},{m}'] = .1
+
         else:
-            eff_energy2 = c2pt_noninteracting2[0].get_effective_energy(1)[c2pt_noninteracting2[1] + 0.5]
-            init_guesses_dict['E(1)0'] = eff_energy1.mean
-            init_guesses_dict['E(2)0'] = eff_energy2.mean
-            ignore_params.append('E(1)0')
-            ignore_params.append('E(2)0')
+            num_states1 = self.num_single_hadron_states[0]
+            num_states2 = self.num_single_hadron_states[0]
+            for n in range(num_states1):
+                for m in range(num_states2):
+                    if n == m == 0:
+                        continue
+                    init_guesses_dict[f'dE{n},{m}'] = 0.
 
-        # get interacting shift
-        c2pt_ratio = c2pt_interacting[0].get_ratio_correlator([c2pt_noninteracting1[0], c2pt_noninteracting2[0]])
-        eff_energy = c2pt_ratio.get_effective_energy(1)[c2pt_interacting[1] + 0.5]
-        init_guesses_dict['dE0,0'] = eff_energy.mean
-        ignore_params.append('dE0,0')
-
-        for param in self.params:
-            if param in ignore_params:
-                continue
-
-            init_guesses_dict[param] = .1
+            for n in range(num_states1):
+                for m in range(num_states2):
+                    if n == m == 0:
+                        continue
+                    init_guesses_dict[f'rp{n},{m}'] = .1
 
         return init_guesses_dict
 
+    def get_priors(self, c2pt_ratio_data, tsep):
+        priors_dict = dict()
+
+        eff_energy = c2pt_ratio_data.get_effective_energy(1)[tsep + 0.5]
+        priors_dict[f'dE{0},{0}'] = data_handler.Prior((eff_energy.mean, eff_energy.mean))
+
+        eff_amp = np.exp(eff_energy*tsep) * c2pt_ratio_data(tsep).real
+        priors_dict[f'rp{0},{0}'] = data_handler.Prior((eff_amp.mean, eff_amp.mean*.1))
+
+        part1 = self.particles[0]
+        part2 = self.particles[1]
+
+        if part1 == part2:
+            num_states = self.num_single_hadron_states[0]
+            for n in range(num_states):
+                for m in range(n+1):
+                    if n == m == 0:
+                        continue
+                    priors_dict[f'dE{n},{m}'] = data_handler.Prior((0., eff_energy.mean))
+
+            for n in range(num_states):
+                for m in range(n+1):
+                    if n == m == 0:
+                        continue
+                    priors_dict[f'rp{n},{m}'] = data_handler.Prior((1., .25))
+
+        else:
+            num_states1 = self.num_single_hadron_states[0]
+            num_states2 = self.num_single_hadron_states[0]
+            for n in range(num_states1):
+                for m in range(num_states2):
+                    if n == m == 0:
+                        continue
+                    priors_dict[f'dE{n},{m}'] = data_handler.Prior((0., eff_energy.mean))
+
+            for n in range(num_states1):
+                for m in range(num_states2):
+                    if n == m == 0:
+                        continue
+                    priors_dict[f'rp{n},{m}'] = data_handler.Prior((1., .25))
+
+        return priors_dict

@@ -291,11 +291,10 @@ def overlap_plots(plotfiles, overlaps, labels):
     """
 
     # check sizes
-    num_ops = overlaps.size[0]
+    num_ops = overlaps.shape[0]
     if (num_ops != len(plotfiles)) or (num_ops != len(labels)):
         print("In function 'overlap_plots', object sizes not consistent")
         sys.exit()
-
 
     for op_id, (plotfile, label) in enumerate(zip(plotfiles, labels)):
         fig, ax = plt.subplots()
@@ -307,7 +306,7 @@ def overlap_plots(plotfiles, overlaps, labels):
         x_vals = list()
         y_vals = list()
         y_errs = list()
-        for n in range(overlaps.size[1]):
+        for n in range(overlaps.shape[1]):
             x_vals.append(n)
             y_vals.append(overlaps[op_id, n].mean)
             y_errs.append(overlaps[op_id, n].sdev)
@@ -320,9 +319,9 @@ def overlap_plots(plotfiles, overlaps, labels):
 
         plt.tight_layout(pad=0.80)
 
-        plt.savefig(plot_file)
+        plt.savefig(plotfile)
 
-        pickle_file, _ = os.path.splitext(plot_file)
+        pickle_file, _ = os.path.splitext(plotfile)
         with open(f"{pickle_file}.pkl", "wb") as fh:
             pickle.dump(fig, fh)
 

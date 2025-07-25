@@ -2,18 +2,17 @@ import os
 import pylatex
 
 from qcd_analysis.plotting import c2pt_plotting
+from qcd_analysis.data_handling import c2pt_datatype
 
 def create_spectrum_doc(pdf_dir, title, ):
     ...
 
-def create_raw_data_doc(pdf_dir, title, diagonal_correlators, off_diagonal_correlators={}):
+'''
+def create_raw_data_doc(pdf_dir, title, corr_mats):
     """
     Args:
         title (str) - title for document
-        diagonal_correlators (dict) - {str: list[correlators]}: Sets of diagonal correlators.
-            the key is the name for the list of correlators
-        off_diagonal_correlators (dict) - {str: list[correlators]}: Sets of off-diagonal correlators.
-            the key is the name for the list of correlators
+        corr_mats (dict) - {str: corr_mat}: the key is the name for the correlator matrix
     """ 
 
     doc = create_doc(title)
@@ -25,43 +24,115 @@ def create_raw_data_doc(pdf_dir, title, diagonal_correlators, off_diagonal_corre
         with doc.create(pylatex.Section(channel_name)):
             for corr in corr_list:
                 with doc.create(pylatex.Subsection(corr.data_name)):
-                    add_correlator(doc, corr, pdf_dir, channel_dir) 
+                    add_correlator(doc, corr, True, pdf_dir, channel_dir) 
 
             if channel_name in off_diagonal_correlators:
                 with doc.create(pylatex.Subsection("Off-diagonal correlators")):
                     for corr in off_diagonal_correlators[channel_name]:
                         with doc.create(pylatex.Subsubsection(corr.data_name)):
-                            add_correlator(doc, corr, pdf_dir, channel_dir) 
+                            add_correlator(doc, corr, False, pdf_dir, channel_dir) 
+
+    pdf_filename = os.path.join(pdf_dir, title)
+    compile_pdf(doc, pdf_filename)
+'''
+
+def create_raw_data_doc(pdf_dir, title, correlator_sets):
+    """
+    Args:
+        pdf_dir (str) - Location where the pdf should be created
+        title (str) - title for document
+        correlator_sets (dict) - {str: C2ptMatrixData or list[C2ptData]}: the string key is the name
+                                 for the set of correlators
+    """
+
+    doc = create_doc(title)
+    fig_dir = os.path.join(pdf_dir, "plots")
+
+    for channel_name, corr_set in correlator_sets.items():
+        channel_dir = os.path.join(fig_dir, channel_name.replace(' ', '_'))
+        os.makedirs(channel_dir, exist_ok=True)
+        with doc.create(pylatex.Section(channel_name)):
+            diagonal_corrs = list()
+            off_diagonal_corrs = list()
+            if type(corr_set) is list:
+                for corr in corr_set:
+                    if corr.diagonal:
+                        diagonal_corrs.append(corr)
+                    else:
+                        off_diagonal_corrs.append(corr)
+
+            elif isinstance(corr_set, c2pt_datatype.C2ptMatrixData):
+                diagonal_corrs = corr_set.get_diagonal_correlator_set()
+                off_diagonal_corrs = corr_set.get_off_diagonal_correlator_set()
+            else:
+                print("Unrecognized correlator set in 'create_raw_data_doc'")
+                sys.exit()
+
+            if len(diagonal_corrs):
+                for corr in diagonal_corrs:
+                    with doc.create(pylatex.Subsection(corr.corr_name)):
+                        add_correlator(doc, corr, corr.corr_name.replace(' ', '_'), True, pdf_dir, channel_dir)
+
+            if len(off_diagonal_corrs):
+                with doc.create(pylatex.Subsection("Off-diagonal correlators")):
+                    for corr in off_diagonal_corrs:
+                        with doc.create(pylatex.Subsubsection(corr.corr_name)):
+                            add_correlator(doc, corr, corr.corr_name.replace(' ', '_'), False, pdf_dir, channel_dir)
 
     pdf_filename = os.path.join(pdf_dir, title)
     compile_pdf(doc, pdf_filename)
 
 
-def create_gevp_data_doc(pdf_dir, title, operators, rot_diagonal_correlators, rot_off_diagonal_correlators={}, rot_ratios={}, overlaps={}):
+def create_gevp_data_doc(pdf_dir, title, original_corr_mats, rotated_corr_mats):
     """
     Args:
+        pdf_dir (str) - Location where the pdf should be created
         title (str) - title for document
-        operators (dict) - {str: list[operators]}
-        rot_diagonal_correlators (dict) - {str: list[correlators]}: Sets of diagonal correlators.
-            the key is the name for the list of correlators
-        rot_off_diagonal_correlators (dict) - {str: list[correlators]}: Sets of off-diagonal correlators.
-            the key is the name for the list of correlators
-        rot_ratios (dict) - {str: str: [single_correlator_list]}
-        overlaps (dict) - {str: 
+        original_corr_mats (dict) - {str: corr_matt}: channel name is the key
+        rotated_corr_mats (dict) - {str: corr_matt}: channel name is the key
     """ 
 
     doc = create_doc(title)
     fig_dir = os.path.join(pdf_dir, "plots")
 
-    for channel_name, operator_list in operators.items():
-        channel_dir = os.path.join(fit_dir, channel_name.replace(' ', '_'))
+    for channel_name, original_corr_mat in original_corr_mats.items():
+        rotated_corr_mat = rotated_corr_mats[channel_name]
+        channel_dir = os.path.join(fig_dir, channel_name.replace(' ', '_'))
         os.makedirs(channel_dir, exist_ok=True)
         with doc.create(pylatex.Section(channel_name)):
+            operators = original_corr_mat.operators
+            with doc.create(pylatex.Subsection("Operators")):
+                with doc.create(pylatex.Itemize()) as op_list:
+                    for op in operators:
+                        op_list.add_item(op)
 
+            doc.append(pylatex.NoEscape(r"\newpage"))
 
+            with doc.create(pylatex.Subsection("Rotated Correlators")):
+                for level_i, corr in enumerate(rotated_corr_mat.get_diagonal_correlator_set()):
+                    with doc.create(pylatex.Subsubsection(f"Level {level_i}")):
+                        add_correlator(doc, corr, "level{level_i}", True, pdf_dir, channel_dir)
 
+            doc.append(pylatex.NoEscape(r"\newpage"))
+            
+            with doc.create(pylatex.Subsection("Off-diagonal Rotated Correlators")):
+                for i in range(rotated_corr_mat.N):
+                    for j in range(i+1, rotated_corr_mat.N):
+                        corr_name = f"Level {i} - Level {j}"
+                        with doc.create(pylatex.Subsubsection(corr_name)):
+                            add_correlator(doc, rotated_corr_mat[i,j], "level{i}_level{k}", False, pdf_dir, channel_dir)
 
-    add_raw_data(doc, pdf_dir, fig_dir, diagonal_correlators, off_diagonal_correlators, False)
+            doc.append(pylatex.NoEscape(r"\newpage"))
+
+            with doc.create(pylatex.Subsection("Overlaps")):
+                plotfiles = [os.path.join(channel_dir, f"overlaps_{op_i}.pdf") for op_i in range(len(operators))]
+                c2pt_plotting.overlap_plots(plotfiles, original_corr_mat.overlaps, operators)
+
+                grouped_plotfiles = [plotfiles[n:n+3] for n in range(0, len(plotfiles), 3)]
+                for plotfile_group in grouped_plotfiles:
+                    with doc.create(pylatex.Figure(position='H')) as fig:
+                        for plotfile in plotfile_group:
+                            add_image(fig, pdf_dir, plotfile, width="0.3", view=False)
 
     pdf_filename = os.path.join(pdf_dir, title)
     compile_pdf(doc, pdf_filename)
@@ -97,11 +168,11 @@ def create_doc(title):
 
     return doc
 
-def add_correlator(doc, correlator, latex_dir, plot_dir, dt=1, cosh=False):
+def add_correlator(doc, correlator, corr_filename, diagonal, latex_dir, plot_dir, dt=1, cosh=False):
 
-    if correlator.snk_operator == correlator.src_operator:
-        left_pdf_file = os.path.join(plot_dir, f"corr_{correlator.data_name}.pdf")
-        right_pdf_file = os.path.join(plot_dir, f"eff_energy_{correlator.data_name}.pdf")
+    if diagonal:
+        left_pdf_file = os.path.join(plot_dir, f"corr_{corr_filename}.pdf")
+        right_pdf_file = os.path.join(plot_dir, f"eff_energy_{corr_filename}.pdf")
 
         c2pt_plotting.plot_correlator(left_pdf_file, correlator.real, True)
         c2pt_plotting.plot_effective_energy(right_pdf_file, correlator.real, dt, cosh)
@@ -110,8 +181,8 @@ def add_correlator(doc, correlator, latex_dir, plot_dir, dt=1, cosh=False):
         right_estimates = correlator.real.get_effective_energy(dt, cosh)
 
     else:
-        left_pdf_file = os.path.join(plot_dir, f"corr_{correlator.data_name}_real.pdf")
-        right_pdf_file = os.path.join(plot_dir, f"corr_{correlator.data_name}_imag.pdf")
+        left_pdf_file = os.path.join(plot_dir, f"corr_{corr_filename}_real.pdf")
+        right_pdf_file = os.path.join(plot_dir, f"corr_{corr_filename}_imag.pdf")
 
         c2pt_plotting.plot_correlator(left_pdf_file, correlator.real, False)
         c2pt_plotting.plot_correlator(right_pdf_file, correlator.imag, False)
@@ -126,7 +197,7 @@ def add_correlator(doc, correlator, latex_dir, plot_dir, dt=1, cosh=False):
             add_image(right_fig, latex_dir, right_pdf_file, width="1.0")
 
 
-    if correlator.snk_operator == correlator.src_operator:
+    if diagonal:
         header_row = [
             pylatex.NoEscape(r"$t$"),
             pylatex.NoEscape(r"$C(t)$"),
@@ -158,7 +229,7 @@ def add_correlator(doc, correlator, latex_dir, plot_dir, dt=1, cosh=False):
                 left_est_nice = str(left_estimates[t_sep])
                 left_rel_error = round(left_estimates[t_sep].sdev/abs(left_estimates[t_sep].mean), 4)
                 t_sep_right = t_sep
-                if correlator.snk_operator == correlator.src_operator:
+                if diagonal:
                     t_sep_right = t_sep + 0.5*dt
 
                 if t_sep_right in right_estimates:

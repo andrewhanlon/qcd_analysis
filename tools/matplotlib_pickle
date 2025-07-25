@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+import matplotlib.pyplot as plt
+import pickle
+
+if len(sys.argv) != 2:
+    print("Must pass pickle file as sole argument")
+    sys.exit()
+
+pickle_file = sys.argv[1]
+
+fig = pickle.load(open(pickle_file, 'rb'))
+ax_master = fig.axes[0]
+for ax in fig.axes:
+    if ax is not ax_master:
+        ax_master.get_shared_y_axes().joined(ax_master, ax)
+
+plt.get_current_fig_manager().set_window_title(pickle_file)
+plt.show()

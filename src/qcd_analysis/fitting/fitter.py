@@ -187,7 +187,7 @@ class Fitter:
                 init_guesses.append(self.init_guesses[param])
                 if param in self.fit_function.priors:
                     priored_params.append(param)
-                    priors.append(str(self.fit_function.pirors[param]))
+                    priors.append(str(self.fit_function.priors[param]))
 
         fit_group.attrs['params'] = params
         fit_group.attrs['param_results'] = param_results
