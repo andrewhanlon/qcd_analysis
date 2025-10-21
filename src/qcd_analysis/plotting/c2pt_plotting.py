@@ -74,6 +74,46 @@ def plot_effective_energy(plot_file, corr, dt=1, cosh=False, y_label=r"$a E_{\rm
 
     plt.close()
 
+def plot_effective_energies(plot_file, corrs, labels, dt=1, cosh=False, y_label=r"$a E_{\rm eff} (t_{\rm sep})$"):
+    fig, ax = plt.subplots()
+    plt.xlabel(r"$t_{\rm sep}$")
+    plt.ylabel(y_label)
+
+    avail_colors = plt.cm.tab10(list(range(10)))
+
+    for i, (corr, label) in enumerate(zip(corrs, labels)):
+        x_vals = list()
+        y_vals = list()
+        y_errs = list()
+
+        eff_energy = corr.get_effective_energy(dt, cosh)
+
+        for tsep in corr.tseps:
+            tsep_dt = tsep + dt
+            if tsep_dt not in corr.tseps:
+                continue
+
+            x_val = (tsep + tsep_dt)/2
+            if x_val not in eff_energy:
+                continue
+
+            data_eff_energy = eff_energy[x_val]
+            y_vals.append(data_eff_energy.mean)
+            y_errs.append(data_eff_energy.sdev)
+            x_vals.append(x_val)
+
+        plt.errorbar(x_vals, y_vals, yerr=y_errs, marker='o', color=avail_colors[i], capsize=2, capthick=.5, lw=.5, ls='none', markerfacecolor='none', label=label)
+
+    ax.legend()
+    plt.tight_layout(pad=0.80)
+    plt.savefig(plot_file)
+
+    pickle_file, _ = os.path.splitext(plot_file)
+    with open(f"{pickle_file}.pkl", "wb") as fh:
+        pickle.dump(fig, fh)
+
+    plt.close()
+
 
 def plot_effective_energy_with_fit(plot_file, corr, fitter, print_params={}, dt=1, cosh=False, y_label=r"$a E_{\rm eff} (t_{\rm sep})$"):
     fig, ax = plt.subplots()
@@ -220,66 +260,6 @@ def plot_tmin(plot_file, results, height_ratios, chosen_results={}):
 
     plt.close()
 
-
-def plot_spectrum(plot_file, energies, non_interacting_energies, thresholds, y_label=r"$a E_{\rm cm}$", label_rotation=0):
-    """
-    Args:
-        energies - dict {irrep_latex: [energy_result]}
-        non_interacting_energies - dict {irrep_latex: energy_result}
-        thresholds - dict {label_latex: energy_result}
-    """
-
-    fig, ax = plt.subplots()
-
-    plt.xlabel(r"$t_{\rm min}$")
-    plt.ylabel(y_label)
-
-    ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
-
-    labels = list()
-    label_locations = list()
-    for x_val, (irrep_latex, energy_results) in enumerate(energies.items()):
-        labels.append(irrep_latex)
-        label_locations.append(x_val)
-
-        non_interacting_results = non_interacting_energies[irrep_latex] if irrep_latex in non_interacting_energies else list()
-
-        for non_int_energy in non_interacting_results:
-            plt.hlines(y=non_int_energy.mean, xmin=x_val-.3, xmax=x_val+.3, colors='k', linestyles='--', lw=1.)
-            upper = non_int_energy.mean + non_int_energy.sdev
-            lower = non_int_energy.mean - non_int_energy.sdev
-            x = np.linspace(x_val-.3, x_val+.3, 100)
-            ax.fill_between(x, lower, upper, alpha=0.2, color='tab:grey', edgecolor='none')
-
-        
-        x_vals = list()
-        y_vals = list()
-        y_errs = list()
-        for energy_result in energy_results:
-            x_vals.append(x_val)
-            y_vals.append(energy_result.mean)
-            y_errs.append(energy_result.sdev)
-
-        plt.errorbar(x_vals, y_vals, yerr=y_errs, marker='o', color='k', capsize=2, capthick=.5, lw=.5, ls='none', markerfacecolor='none')
-
-    plt.xticks(label_locations, labels, rotation=label_rotation)
-
-    # plot thresholds
-    for threshold_latex, threshold_energy in thresholds.items():
-        xmin, xmax = ax.get_xlim()
-        x = np.linspace(xmin, xmax, 100)
-        plt.hlines(y=threshold_energy, xmin=xmin, xmax=xmax, colors='tab:grey', linestyles=':', lw=1.)
-        plt.text(xmax, threshold_energy, threshold_latex, ha='right', va='center')
-
-
-    plt.tight_layout(pad=0.80)
-    plt.savefig(plot_file)
-
-    pickle_file, _ = os.path.splitext(plot_file)
-    with open(f"{pickle_file}.pkl", "wb") as fh:
-        pickle.dump(fig, fh)
-
-    plt.close()
 
 
 def overlap_plots(plotfiles, overlaps, labels):

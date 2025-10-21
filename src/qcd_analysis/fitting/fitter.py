@@ -8,10 +8,24 @@ import multiprocessing
 import multiprocessing.shared_memory
 import threadpoolctl
 
+import lsqfit
+import gvar as gv
+
 from qcd_analysis.data_handling import data_handler
 
-#NUM_PROCESSES = 2 if multiprocessing.cpu_count() <= 16 else multiprocessing.cpu_count() // 8
 NUM_PROCESSES = multiprocessing.cpu_count() // 2
+def set_num_processes(num_processes):
+    global NUM_PROCESSES
+    NUM_PROCESSES = num_processes
+
+PARALLEL = True
+def set_to_serial():
+    global PARALLEL
+    PARALLEL = False
+
+def set_to_parallel():
+    global PARALLEL
+    PARALLEL = True
 
 def get_shared_data(shape):
     d_size = int(np.dtype(np.float64).itemsize * np.prod(shape))
@@ -31,6 +45,28 @@ def fit_sample(samp_i, fit_data_sh, input_data, fit_function, init_guesses, **kw
     fit_data[samp_i,:] = fit_result.x
     if samp_i == 0:
         return fit_result
+
+def fit_sample_lsqfit(samp_i, fit_data_sh, input_data, fit_function, init_guesses, **kwargs):
+    dependent_data = gv.gvar(input_data.samples[0,:], input_data.cov)
+    full_fit = lsqfit.nonlinear_fit(data=(input_data.independent_variables_values, dependent_data),
+                                    fcn=fit_function,
+                                    p0=init_guesses,
+                                    prior=fit_function.priors,
+                                    svdcut=fit_info.svdcut,
+                                    fitter=fit_info.fitter,
+                                    noise=(False,False),
+                                    debug=DEBUG)
+
+    data_shape = (input_data.num_samples+1, len(init_guesses))
+    residuals_func = input_data.get_weighted_residuals_func(samp_i, fit_function)
+    fit_result = scipy.optimize.least_squares(residuals_func, init_guesses, **kwargs)
+    fit_data = np.ndarray(shape=data_shape, dtype=np.float64, buffer=fit_data_sh.buf)
+    fit_data[samp_i,:] = fit_result.x
+    if samp_i == 0:
+        return fit_result
+
+def apply_args_and_kwargs(fn, args, kwargs):
+    return fn(*args, **kwargs)
 
 class Fitter:
 
@@ -67,16 +103,21 @@ class Fitter:
             raise ValueError("Mismatch in size of input_data and fit_function passed to fitter.Fitter")
 
 
-    def do_fit(self, uncorrelated=False, **kwargs):
+    def do_fit(self, uncorrelated=False, method='trf', **kwargs):
         """
         Args:
             uncorrelated (bool): self explanatory, default is false
-            kwargs: to be passed to lsq
+            method (str): Possible methods are
+                          - 'trf' (default)
+                          - 'dogbox'
+                          - 'lm'
+                          - 'lsqft_scipy'
+                          - 'lsqft_gsl'
+            kwargs: to be passed to the fitter
         Returns:
             bool: True if fit is successful, otherwise False
         """
 
-        # get args
         #try:
         if self.input_data.num_data <= 0:
             print(f"ndat <= 0; fit failed")
@@ -99,19 +140,34 @@ class Fitter:
         fit_data_sh = get_shared_data(data_shape)
 
         # do fit
-        with threadpoolctl.threadpool_limits(limits=1, user_api='blas'):
+        if PARALLEL:
+            with threadpoolctl.threadpool_limits(limits=1, user_api='blas'):
+                fit_results_mean = fit_sample(0, fit_data_sh, self.input_data, self.fit_function, init_guesses_flat, **kwargs)
+
+                self._chi2 = 2.*fit_results_mean.cost
+                init_guesses_flat = fit_results_mean.x
+
+                with multiprocessing.Pool(processes=NUM_PROCESSES) as pool:
+                    # Thanks be to https://stackoverflow.com/a/53173433
+                    samples_i_list = list(range(1, self.input_data.num_samples+1))
+                    args_iter = zip(samples_i_list,
+                                    itertools.repeat(fit_data_sh),
+                                    itertools.repeat(self.input_data),
+                                    itertools.repeat(self.fit_function),
+                                    itertools.repeat(init_guesses_flat))
+                    kwargs_iter = itertools.repeat(kwargs)
+                    args_for_starmap = zip(itertools.repeat(fit_sample), args_iter, kwargs_iter)
+                    pool.starmap(apply_args_and_kwargs, args_for_starmap)
+
+
+        else:
             fit_results_mean = fit_sample(0, fit_data_sh, self.input_data, self.fit_function, init_guesses_flat, **kwargs)
 
             self._chi2 = 2.*fit_results_mean.cost
             init_guesses_flat = fit_results_mean.x
 
-            with multiprocessing.Pool(processes=NUM_PROCESSES) as pool:
-                pool.starmap(fit_sample, zip(list(range(1, self.input_data.num_samples+1)),
-                                             itertools.repeat(fit_data_sh),
-                                             itertools.repeat(self.input_data),
-                                             itertools.repeat(self.fit_function),
-                                             itertools.repeat(init_guesses_flat)))
-
+            for sample_i in range(1, self.input_data.num_samples+1):
+                fit_sample(sample_i, fit_data_sh, self.input_data, self.fit_function, init_guesses_flat, **kwargs)
 
         # get results
         fit_data = np.copy(np.ndarray(shape=data_shape, dtype=np.float64, buffer=fit_data_sh.buf))

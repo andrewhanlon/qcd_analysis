@@ -11,12 +11,17 @@ import matplotlib.pyplot as plt
 
 
 class SamplingMode(enum.Enum):
+    NONE = 0
     JACKKNIFE = 1
     BOOTSTRAP = 2
 
 SAMPLING_MODE = SamplingMode.JACKKNIFE
 NUM_JACK = None
 BOOTSTRAPS = None
+
+def turn_off_resampling():
+    global SAMPLING_MODE
+    SAMPLING_MODE = SamplingMode.NONE
 
 def set_to_jackknife():
     global SAMPLING_MODE, BOOTSTRAPS
@@ -44,6 +49,8 @@ def get_sampling_mode():
 def get_num_samples():
     if get_sampling_mode() == SamplingMode.BOOTSTRAP:
         return BOOTSTRAPS.shape[0]
+    elif get_sampling_mode() == SamplingMode.NONE:
+        return 0
     else:
         return NUM_JACK
 
@@ -66,6 +73,10 @@ class Data:
         if isinstance(input_data, gv.GVar):
             self._bins = None
             self._create_samples_from_gvar(input_data, bins)
+        elif isinstance(input_data, (int, float, complex)) and not isinstance(input_data, bool):
+            self._bins = np.array([input_data])
+            self._samples = np.array([input_data])
+            turn_off_resampling()
         elif bins:
             self._bins = input_data
             self._create_samples()
@@ -168,6 +179,9 @@ class Data:
     def error(self, asymmetric=False):
         if SAMPLING_MODE == SamplingMode.JACKKNIFE:
             return (self.num_samples - 1)**0.5 * np.std(self.samples[1:], ddof=0, mean=self.samples[0])
+
+        elif SAMPLING_MODE == SamplingMode.NONE:
+            return 0.
 
         elif asymmetric:
             sorted_samples = np.sort(self.samples[1:])
@@ -299,6 +313,7 @@ class Data:
 class DataType(metaclass=abc.ABCMeta):
 
     _cov = None
+    _cov_chol_lower = None
 
     @property
     @abc.abstractmethod
@@ -358,13 +373,20 @@ class DataType(metaclass=abc.ABCMeta):
                     cov[j,i] = 0.
 
         self._cov = cov
-        self._cov_chol_lower = scipy.linalg.cholesky(cov, lower=True, check_finite=False)
+        self._cov_chol_lower = None
 
 
-    def get_covariance(self):
+    @property
+    def cov(self):
         if self._cov is None:
             self.set_covariance()
         return self._cov
+
+    @property
+    def cov_chol_lower(self):
+        if self._cov_chol_lower is None:
+            self._cov_chol_lower = scipy.linalg.cholesky(self.cov, lower=True, check_finite=False)
+        return self._cov_chol_lower
 
 
     def get_residuals(self, samp_i, fit_func, params):
@@ -376,7 +398,7 @@ class DataType(metaclass=abc.ABCMeta):
         return residuals
 
     def get_weighted_residuals(self, samp_i, fit_func, params):
-        cov_chol_lower = self._cov_chol_lower
+        cov_chol_lower = self.cov_chol_lower
         if fit_func.num_priors:
             priored_cov_chol_lower = np.zeros((cov_chol_lower.shape[0]+fit_func.num_priors,
                                               cov_chol_lower.shape[1]+fit_func.num_priors), dtype=np.float64)

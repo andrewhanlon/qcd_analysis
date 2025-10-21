@@ -157,4 +157,10 @@ Several Datatypes (e.g. C2ptData) relevant for lattice analysis are defined.
 Additionally, the fitter takes a data type and a fit function
 
 ## TODO
-- Many of the Data Types can be made more abstract. Make General Data Types (scalar, 1d array, 2d array, Nd array).
+- Many of the Data Types can be made more abstract.
+Make General Data Types (scalar, 1d array, 2d array, Nd array), i.e. MultiNd objects.
+The underlying data structure can just be a numpy array.
+Then, every data type is just an extension of these MultiNd objects.
+If the keys for the data type are not indices starting from zero, then a major feature of each extension DataType is to implement a mapping of the keys to indices in the underlying numpy array.
+- Related to the previous item, the numpy arrays are arrays of `Data` objects.
+So, maybe it's the `Data` objects that need to be extended?

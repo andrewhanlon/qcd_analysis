@@ -648,13 +648,13 @@ class C2ptMatrixData:
         if mean and td is None and t0 is None:
             raise NotImplementedError("not implemented options: mean and td is None and t0 is None")
         elif mean and td is None:
-            raise NotImplementedError("not implemented options: mean and td is None")
             eigvals = np.empty((self.N, len(self.tseps)), dtype=np.complex128)
             eigvecs = np.empty((self.N, self.N, len(self.tseps)), dtype=np.complex128)
             t0_i = self.tseps.index(t0)
             for td_i, td in enumerate(self.tseps):
                 eigvals[:, td_i], eigvecs[:, :, td_i] = scipy.linalg.eigh(self.samplings_corr_mat[:, :, td_i, 0], self.samplings_corr_mat[:, :, t0_i, 0])
 
+            '''
             ref_td = max(1, min(self.tseps))
             for td_i, td in enumerate(self.tseps):
                 if td < ref_td:
@@ -665,9 +665,35 @@ class C2ptMatrixData:
                 if td != ref_td:
                     # reorder the eigvecs and eigvals at td_i based on reorder
                     ...
+            '''
 
             eigvecs = np.repeat(eigvecs[:, :, :, np.newaxis], data_handler.get_num_samples()+1, axis=3)
-            eigvals = np.repeat(eigvals[:, :, :, np.newaxis], data_handler.get_num_samples()+1, axis=3)
+            eigvals = np.repeat(eigvals[:, :, np.newaxis], data_handler.get_num_samples()+1, axis=2)
+
+            eigvecs = np.flip(eigvecs, axis=1)  # orders eigenvectors by energy
+            eigvals = np.flip(eigvals, axis=0)
+            self._eigen_vecs = eigvecs
+
+            principal_corrs = np.empty((self.N, self.N), dtype=object)
+            rot_operators = [f"Level {n_i}" for n_i in range(self.N)]
+            for n_i in range(self.N):
+                c2pt_data_dict = dict()
+                for ts_i, ts in enumerate(self.tseps):
+                    c2pt_data_dict[ts] = data_handler.Data(eigvals[n_i, ts_i, :])
+
+                principal_corrs[n_i, n_i] = C2ptData(c2pt_data_dict, snk_operator=rot_operators[n_i], src_operator=rot_operators[n_i])
+
+                for n_j in range(self.N):
+                    if n_i == n_j:
+                        continue
+
+                    c2pt_data_dict = dict()
+                    for ts_i, ts in enumerate(self.tseps):
+                        c2pt_data_dict[ts] = data_handler.Data(np.zeros(data_handler.get_num_samples()+1))
+
+                    principal_corrs[n_i, n_j] = C2ptData(c2pt_data_dict, snk_operator=rot_operators[n_i], src_operator=rot_operators[n_i])
+
+            return C2ptMatrixData(principal_corrs, rot_operators, make_hermitian=False)
 
         elif mean:
             t0_i = self.tseps.index(t0)
@@ -681,6 +707,23 @@ class C2ptMatrixData:
             _, eigvecs = scipy.linalg.eigh(Ctd_mean, Ct0_mean)
             eigvecs_mean = np.repeat(eigvecs[:, :, np.newaxis], len(self.tseps), axis=2)
             eigvecs = np.repeat(eigvecs_mean[:, :, :, np.newaxis], data_handler.get_num_samples()+1, axis=3)
+
+            eigvecs = np.flip(eigvecs, axis=1)  # orders eigenvectors by energy
+            self._eigen_vecs = eigvecs
+
+            principal_corrs_raw = self.rotate_raw(eigvecs)
+            principal_corrs = np.empty((self.N, self.N), dtype=object)
+            rot_operators = [f"Level {n_i}" for n_i in range(self.N)]
+            for n_i in range(self.N):
+                for n_j in range(self.N):
+                    c2pt_data_dict = dict()
+                    for ts_i, ts in enumerate(self.tseps):
+                        c2pt_data_dict[ts] = data_handler.Data(principal_corrs_raw[n_i, n_j, ts_i, :])
+
+                    principal_corrs[n_i, n_j] = C2ptData(c2pt_data_dict, snk_operator=rot_operators[n_i], src_operator=rot_operators[n_j])
+
+            return C2ptMatrixData(principal_corrs, rot_operators, make_hermitian=False)
+
 
         elif td is None and t0 is None:
             raise NotImplementedError("not implemented options: td is None and t0 is None")
@@ -701,22 +744,6 @@ class C2ptMatrixData:
                 _, eigvecs[:, :, s_i] = scipy.linalg.eigh(self.samplings_corr_mat[:, :, td_i, s_i], self.samplings_corr_mat[:, :, t0_i, s_i])
 
             eigvecs = np.repeat(eigvecs[:, :, np.newaxis, :], len(self.tseps), axis=2)
-
-        eigvecs = np.flip(eigvecs, axis=1)  # orders eigenvectors by energy
-        self._eigen_vecs = eigvecs
-
-        principal_corrs_raw = self.rotate_raw(eigvecs)
-        principal_corrs = np.empty((self.N, self.N), dtype=object)
-        rot_operators = [f"Level {n_i}" for n_i in range(self.N)]
-        for n_i in range(self.N):
-            for n_j in range(self.N):
-                c2pt_data_dict = dict()
-                for ts_i, ts in enumerate(self.tseps):
-                    c2pt_data_dict[ts] = data_handler.Data(principal_corrs_raw[n_i, n_j, ts_i, :])
-
-                principal_corrs[n_i, n_j] = C2ptData(c2pt_data_dict, snk_operator=rot_operators[n_i], src_operator=rot_operators[n_j])
-
-        return C2ptMatrixData(principal_corrs, rot_operators, make_hermitian=False)
 
 
     def rotate_raw(self, eigvecs):
@@ -831,7 +858,6 @@ class C2ptMatrixData:
 
         return amplitudes
 
-    '''
     def get_principal_correlators_from_ev(self, t0, td, mean):
         """
         INFO: This does things more properly (see notes from Colin).
@@ -905,7 +931,6 @@ class C2ptMatrixData:
         if hasattr(self, '_G_eigenvectors'):
             return self._G_eigenvectors
         return None
-    '''
 
     def __call__(self, row, col):
         return self._corr_mat[row,col]

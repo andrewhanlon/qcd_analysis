@@ -7,35 +7,6 @@ from qcd_analysis.data_handling import c2pt_datatype
 def create_spectrum_doc(pdf_dir, title, ):
     ...
 
-'''
-def create_raw_data_doc(pdf_dir, title, corr_mats):
-    """
-    Args:
-        title (str) - title for document
-        corr_mats (dict) - {str: corr_mat}: the key is the name for the correlator matrix
-    """ 
-
-    doc = create_doc(title)
-    fig_dir = os.path.join(pdf_dir, "plots")
-
-    for channel_name, corr_list in diagonal_correlators.items():
-        channel_dir = os.path.join(fig_dir, channel_name.replace(' ', '_'))
-        os.makedirs(channel_dir, exist_ok=True)
-        with doc.create(pylatex.Section(channel_name)):
-            for corr in corr_list:
-                with doc.create(pylatex.Subsection(corr.data_name)):
-                    add_correlator(doc, corr, True, pdf_dir, channel_dir) 
-
-            if channel_name in off_diagonal_correlators:
-                with doc.create(pylatex.Subsection("Off-diagonal correlators")):
-                    for corr in off_diagonal_correlators[channel_name]:
-                        with doc.create(pylatex.Subsubsection(corr.data_name)):
-                            add_correlator(doc, corr, False, pdf_dir, channel_dir) 
-
-    pdf_filename = os.path.join(pdf_dir, title)
-    compile_pdf(doc, pdf_filename)
-'''
-
 def create_raw_data_doc(pdf_dir, title, correlator_sets):
     """
     Args:
@@ -111,7 +82,7 @@ def create_gevp_data_doc(pdf_dir, title, original_corr_mats, rotated_corr_mats):
             with doc.create(pylatex.Subsection("Rotated Correlators")):
                 for level_i, corr in enumerate(rotated_corr_mat.get_diagonal_correlator_set()):
                     with doc.create(pylatex.Subsubsection(f"Level {level_i}")):
-                        add_correlator(doc, corr, "level{level_i}", True, pdf_dir, channel_dir)
+                        add_correlator(doc, corr, f"level{level_i}", True, pdf_dir, channel_dir)
 
             doc.append(pylatex.NoEscape(r"\newpage"))
             
@@ -120,7 +91,7 @@ def create_gevp_data_doc(pdf_dir, title, original_corr_mats, rotated_corr_mats):
                     for j in range(i+1, rotated_corr_mat.N):
                         corr_name = f"Level {i} - Level {j}"
                         with doc.create(pylatex.Subsubsection(corr_name)):
-                            add_correlator(doc, rotated_corr_mat[i,j], "level{i}_level{k}", False, pdf_dir, channel_dir)
+                            add_correlator(doc, rotated_corr_mat[i,j], f"level{i}_level{j}", False, pdf_dir, channel_dir)
 
             doc.append(pylatex.NoEscape(r"\newpage"))
 
