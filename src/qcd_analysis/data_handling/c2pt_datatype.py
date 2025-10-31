@@ -419,7 +419,7 @@ class C2ptData(data_handler.DataType):
             fit_data = fit_data.get_ratio_correlator(non_int_corrs)
             non_int_amps = list()
             for non_int_corr in non_int_corrs:
-                non_int_amps.append(non_int_corr.get_amplitude([], tmin, tmax, tmax_rel_error, num_exps))
+                non_int_amps.append(non_int_corr.get_amplitude(tmin, tmax, tmax_rel_error, num_exps))
 
         fit_func = c2pt_models.C2ptDirectModel(num_exps)
         fit_func.init_guesses = fit_func.get_init_guesses(fit_data, tmin)
