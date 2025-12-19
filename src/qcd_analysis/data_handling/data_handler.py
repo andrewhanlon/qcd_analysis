@@ -42,6 +42,13 @@ def set_to_bootstrap(num_confs, rebin, num_samples, seed, skip=0):
             BOOTSTRAPS[samp_i,bin_i] = bin_i_map
 
     NUM_SAMPLES = BOOTSTRAPS.shape[0]
+    print(BOOTSTRAPS)
+
+def set_to_bootstrap_manual(bootstraps):
+    global SAMPLING_MODE, NUM_SAMPLES, BOOTSTRAPS
+    SAMPLING_MODE = SamplingMode.BOOTSTRAP
+    BOOTSTRAPS = bootstraps
+    NUM_SAMPLES = bootstraps.shape[0]
 
 def get_sampling_mode():
     return SAMPLING_MODE
@@ -178,7 +185,7 @@ class Data:
 
     def error(self, asymmetric=False):
         if SAMPLING_MODE == SamplingMode.JACKKNIFE:
-            return (self.num_samples - 1)**0.5 * np.std(self.samples[1:], ddof=0, mean=self.samples[0])
+            return (self.num_samples - 1)**0.5 * np.std(self.samples[1:], ddof=0)
 
         elif SAMPLING_MODE == SamplingMode.NONE:
             return 0.
@@ -553,10 +560,15 @@ class FitFunction(metaclass=abc.ABCMeta):
     def num_priors(self):
         return len(self.priors)
 
+    @property
+    def priored_params(self):
+        return self.priors.keys()
+
     @abc.abstractmethod
     def function(self, x, p):
         pass
 
+    '''
     def __call__(self, x, p):
         if type(p) is dict:
             return self.function(x, p)
@@ -570,6 +582,10 @@ class FitFunction(metaclass=abc.ABCMeta):
 
         else:
             raise TypeError("Invalid parameters to FitFunction")
+    '''
+    def __call__(self, x, p):
+        return self.function(x, p)
+
 
     def get_priored_residuals(self, p, samp_i=0):
         priored_residuals = np.zeros((self.num_priors,), dtype=np.float64)
@@ -697,21 +713,30 @@ class MultiFitFunction(FitFunction):
         """
         Args:
           x: list of size of self.fit_functions
-          p: list of size of self.fit_functions
+          p: list of param values
 
         Return:
-          list of size of self.fit_functions
+          list of size equal to total elements in x
         """
+        x_start_i = 0
+        if self.lsqfit_mode:
+            function_values = np.empty(sum([d.size for d in x]), dtype=object)
+        else:
+            function_values = np.empty(sum([d.size for d in x]), dtype=np.float64)
 
-        func_results = list()
-        for funci, xi, pi in zip(self.fit_functions, x, p):
-            func_results.append(funci(xi, pi))
+        for data, fit_func in zip(x, self.fit_functions):
+            param_values = list()
+            for param in fit_func.params:
+                param_values.append(p[self.params.index(param)])
 
-        return func_results
+            function_values[x_start_i:x_start_i+len(data)] = fit_func(data, param_values)
+
+            x_start_i += len(data)
+
+        return function_values
 
     def __call__(self, x, p):
-        #return self.function(x, p)
-        return self.test_function(x, p)
+        return self.function(x, p)
 
     def get_combined_fit_function(self, input_data):
         def combined_fit_function(x, p):
@@ -728,51 +753,3 @@ class MultiFitFunction(FitFunction):
             return function_values
 
         return combined_fit_function
-
-
-    def test_function(self, x, p):
-        """
-        Args:
-          x: list of size of self.fit_functions
-          p: list of param values
-
-        Return:
-          list of size equal to total elements in x
-        """
-
-        x_start_i = 0
-        function_values = np.zeros(sum([d.size for d in x]))
-        for data, fit_func in zip(x, self.fit_functions):
-            param_values = list()
-            for param in fit_func.params:
-                param_values.append(p[self.params.index(param)])
-
-            function_values[x_start_i:x_start_i+len(data)] = fit_func(data, param_values)
-            x_start_i += len(data)
-
-        return function_values
-
-    def new_test_function(self, x, p):
-        """
-        Notes:
-            Check if fit_functions size is one. If it is, 
-        Args:
-          x: list of size of self.fit_functions
-          p: list of param values
-
-        Return:
-          list of size equal to total elements in x
-        """
-
-        x_start_i = 0
-        function_values = np.zeros(sum([d.size for d in x]))
-        for data, fit_func in zip(x, self.fit_functions):
-            param_values = list()
-            for param in fit_func.params:
-                param_values.append(p[self.params.index(param)])
-
-            function_values[x_start_i:x_start_i+len(data)] = fit_func(data, param_values)
-            x_start_i += len(data)
-
-        return function_values
-

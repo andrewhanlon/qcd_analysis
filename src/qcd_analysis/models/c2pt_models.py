@@ -25,23 +25,24 @@ class C2ptDirectModel(data_handler.FitFunction):
 
         self.num_states = num_states
 
+        self._params = ['E0']
+        for i in range(1, self.num_states):
+            self._params.append(f'dE{i},{i-1}')
+
+        self._params.append('A0')
+        for i in range(1, self.num_states):
+            self._params.append(f'R{i}')
+
+
     @property
     def fit_name(self):
         return f"c2pt_{self.num_states}-exp"
 
     @property
     def params(self):
-        _params = ['E0']
-        for i in range(1, self.num_states):
-            _params.append(f'dE{i},{i-1}')
+        return self._params
 
-        _params.append('A0')
-        for i in range(1, self.num_states):
-            _params.append(f'R{i}')
-
-        return _params
-
-
+    '''
     def function(self, x, p):
         f = 1.
         for i in range(1, self.num_states):
@@ -53,6 +54,93 @@ class C2ptDirectModel(data_handler.FitFunction):
         f *= p['A0']*np.exp(-p['E0']*x)
 
         return f
+    '''
+    def function(self, x, p):
+        """
+        The parameters layout MUST match what is returned by self.params.
+
+        Parameter layout:
+            p[0]         = E0
+            p[1 : N]     = dE[1..N-1]
+            p[N]         = A0
+            p[1+N : 2N)] = R[1..N-1]
+        """
+        N = self.num_states
+        f = 1.
+        for i in range(1, N):
+            fi = p[N+i]
+            for j in range(i):
+                fi *= np.exp(-p[1+j]*x)
+            f += fi
+
+        f *= p[N]*np.exp(-p[0]*x)
+
+        return f
+
+
+    '''
+    def new_function(self, x, p):
+        """
+        The parameters layout MUST match what is returned by self.params.
+
+        Parameter layout:
+            p[0]                 = E0
+            p[1 : 1+N-1]         = dE[1..N-1]
+            p[1+N-1]             = A0
+            p[1+N : 1+N+(N-1)]   = R[1..N-1]
+        """
+        N = self.num_states
+
+        E0 = p[0]
+
+        # Convert p to a NumPy array only once if needed
+        p = np.asarray(p)
+
+        if N == 1:
+            # f(x) = A0 * exp(-E0 * x)
+            A0 = p[1]       # because p[1+N-1] = p[0+1] = p[1]
+            return A0 * np.exp(-E0 * np.asarray(x))
+
+        # ---- N > 1 case ----
+
+        # dE terms
+        dE_start = 1
+        dE_end   = 1 + (N - 1)
+        dE = p[dE_start:dE_end]           # shape (N-1,)
+
+        # A0 term
+        A0_index = dE_end                 # = 1 + (N - 1)
+        A0 = p[A0_index]
+
+        # R terms
+        R_start = A0_index + 1            # = N + 1
+        R_end   = R_start + (N - 1)       # = N + 1 + (N - 1) = 2N
+        R = p[R_start:R_end]              # shape (N-1,)
+
+        # cumulative sums of dE: S_i = sum_{k=1}^i dE_k
+        cum_dE = np.cumsum(dE)            # shape (N-1,)
+
+        # exponents E_i
+        E = np.empty(N, dtype=float)
+        E[0] = E0
+        E[1:] = E0 + cum_dE
+
+        # amplitudes a_i
+        a = np.empty(N, dtype=float)
+        a[0] = A0
+        a[1:] = A0 * R
+
+        # evaluate f(x)
+        x = np.asarray(x)
+
+        if x.ndim == 0:
+            # scalar
+            return float(np.dot(a, np.exp(-E * x)))
+        else:
+            # vector
+            return np.sum(a[:, None] * np.exp(-E[:, None] * x[None, :]), axis=0)
+    '''
+
 
 
     def get_init_guesses(self, c2pt_data, tsep):
@@ -85,9 +173,7 @@ class C2ptRatioModel(data_handler.FitFunction):
 
 
     def function(self, x, p):
-        f = p['dA0']*np.exp(-p['dE0']*x)
-        return f
-
+        return p[1]*np.exp(-p[0]*x)
 
     def get_init_guesses(self, c2pt_data, tsep):
         init_guesses_dict = dict()

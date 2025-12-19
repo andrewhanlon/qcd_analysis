@@ -7,6 +7,7 @@ import itertools
 import multiprocessing
 import multiprocessing.shared_memory
 import threadpoolctl
+from dataclasses import dataclass
 
 import lsqfit
 import gvar as gv
@@ -37,33 +38,45 @@ def release_shared_data(name):
     shm.close()
     shm.unlink()
 
-def fit_sample(samp_i, fit_data_sh, input_data, fit_function, init_guesses, **kwargs):
+
+@dataclass
+class FitResult:
+    chi2: float
+    means: float
+
+def fit_sample_standard(samp_i, fit_data_sh, input_data, fit_function, init_guesses, method, **kwargs):
     data_shape = (input_data.num_samples+1, len(init_guesses))
     residuals_func = input_data.get_weighted_residuals_func(samp_i, fit_function)
-    fit_result = scipy.optimize.least_squares(residuals_func, init_guesses, **kwargs)
+    fit_result = scipy.optimize.least_squares(residuals_func, init_guesses, method=method,  **kwargs)
     fit_data = np.ndarray(shape=data_shape, dtype=np.float64, buffer=fit_data_sh.buf)
     fit_data[samp_i,:] = fit_result.x
     if samp_i == 0:
-        return fit_result
+        return FitResult(2.*fit_result.cost, fit_result.x)
 
-def fit_sample_lsqfit(samp_i, fit_data_sh, input_data, fit_function, init_guesses, **kwargs):
-    dependent_data = gv.gvar(input_data.samples[0,:], input_data.cov)
-    full_fit = lsqfit.nonlinear_fit(data=(input_data.independent_variables_values, dependent_data),
-                                    fcn=fit_function,
-                                    p0=init_guesses,
-                                    prior=fit_function.priors,
-                                    svdcut=fit_info.svdcut,
-                                    fitter=fit_info.fitter,
-                                    noise=(False,False),
-                                    debug=DEBUG)
+def fit_sample_lsqfit(samp_i, fit_data_sh, input_data, fit_function, init_guesses, method, **kwargs):
+    priors = None
+    if fit_function.num_priors > 0:
+        if fit_function.params != fit_function.priored_params:
+            print("lsqfit requires all parameters or no parameters to be priored")
+            sys.exit()
 
-    data_shape = (input_data.num_samples+1, len(init_guesses))
-    residuals_func = input_data.get_weighted_residuals_func(samp_i, fit_function)
-    fit_result = scipy.optimize.least_squares(residuals_func, init_guesses, **kwargs)
+        priors = fit_function.priors
+
+    dependent_data = gv.gvar(input_data.samples[samp_i,:], input_data.cov)
+    fit_result = lsqfit.nonlinear_fit(data=(input_data.independent_variables_values, dependent_data),
+                                      fcn=fit_function,
+                                      p0=init_guesses,
+                                      prior=priors,
+                                      svdcut=0.,
+                                      fitter=method,
+                                      **kwargs)
+
+    data_shape = (input_data.num_samples+1, fit_function.num_params)
     fit_data = np.ndarray(shape=data_shape, dtype=np.float64, buffer=fit_data_sh.buf)
-    fit_data[samp_i,:] = fit_result.x
+    fit_data[samp_i,:] = fit_result.pmean
     if samp_i == 0:
-        return fit_result
+        return FitResult(fit_result.chi2, fit_result.pmean)
+    
 
 def apply_args_and_kwargs(fn, args, kwargs):
     return fn(*args, **kwargs)
@@ -103,20 +116,30 @@ class Fitter:
             raise ValueError("Mismatch in size of input_data and fit_function passed to fitter.Fitter")
 
 
-    def do_fit(self, uncorrelated=False, method='trf', **kwargs):
+    def do_fit(self, uncorrelated=False, method='default', use_lsqfit=False, **kwargs):
         """
         Args:
             uncorrelated (bool): self explanatory, default is false
-            method (str): Possible methods are
-                          - 'trf' (default)
-                          - 'dogbox'
-                          - 'lm'
-                          - 'lsqft_scipy'
-                          - 'lsqft_gsl'
+            method (str): Possible methods using the non lsqfitter are
+                              - 'trf' (default)
+                              - 'dogbox'
+                              - 'lm'
+                          Possible methods when using the lsqfitter
+                              - 'scipy_least_squares' (default)
+                              - 'gsl_multifit'
             kwargs: to be passed to the fitter
         Returns:
             bool: True if fit is successful, otherwise False
         """
+
+        if method == 'default' and use_lsqfit:
+            method = 'scipy_least_squares'
+
+        elif method == 'default' and not use_lsqfit:
+            method = 'trf'
+
+        self._method = method
+        self._use_lsqfit = use_lsqfit
 
         #try:
         if self.input_data.num_data <= 0:
@@ -140,12 +163,19 @@ class Fitter:
         fit_data_sh = get_shared_data(data_shape)
 
         # do fit
+        if use_lsqfit:
+            self.fit_function.lsqfit_mode = True
+            fit_sample = fit_sample_lsqfit
+        else:
+            self.fit_function.lsqfit_mode = False
+            fit_sample = fit_sample_standard
+
         if PARALLEL:
             with threadpoolctl.threadpool_limits(limits=1, user_api='blas'):
-                fit_results_mean = fit_sample(0, fit_data_sh, self.input_data, self.fit_function, init_guesses_flat, **kwargs)
+                fit_results_mean = fit_sample(0, fit_data_sh, self.input_data, self.fit_function, init_guesses_flat, method, **kwargs)
 
-                self._chi2 = 2.*fit_results_mean.cost
-                init_guesses_flat = fit_results_mean.x
+                self._chi2 = fit_results_mean.chi2
+                init_guesses_flat = fit_results_mean.means
 
                 with multiprocessing.Pool(processes=NUM_PROCESSES) as pool:
                     # Thanks be to https://stackoverflow.com/a/53173433
@@ -154,26 +184,29 @@ class Fitter:
                                     itertools.repeat(fit_data_sh),
                                     itertools.repeat(self.input_data),
                                     itertools.repeat(self.fit_function),
-                                    itertools.repeat(init_guesses_flat))
+                                    itertools.repeat(init_guesses_flat),
+                                    itertools.repeat(method))
                     kwargs_iter = itertools.repeat(kwargs)
                     args_for_starmap = zip(itertools.repeat(fit_sample), args_iter, kwargs_iter)
                     pool.starmap(apply_args_and_kwargs, args_for_starmap)
 
 
         else:
-            fit_results_mean = fit_sample(0, fit_data_sh, self.input_data, self.fit_function, init_guesses_flat, **kwargs)
+            fit_results_mean = fit_sample(0, fit_data_sh, self.input_data, self.fit_function, init_guesses_flat, method, **kwargs)
 
-            self._chi2 = 2.*fit_results_mean.cost
-            init_guesses_flat = fit_results_mean.x
+            self._chi2 = fit_results_mean.chi2
+            init_guesses_flat = fit_results_mean.means
 
             for sample_i in range(1, self.input_data.num_samples+1):
-                fit_sample(sample_i, fit_data_sh, self.input_data, self.fit_function, init_guesses_flat, **kwargs)
+                fit_sample(sample_i, fit_data_sh, self.input_data, self.fit_function, init_guesses_flat, method, **kwargs)
 
         # get results
         fit_data = np.copy(np.ndarray(shape=data_shape, dtype=np.float64, buffer=fit_data_sh.buf))
         self._params = dict()
+        self._params_list = list()
         for param_i, param in enumerate(self.fit_function.params):
             self._params[param] = data_handler.Data(fit_data[:,param_i])
+            self._params_list.append(data_handler.Data(fit_data[:,param_i]))
 
         release_shared_data(fit_data_sh.name)
 
@@ -186,7 +219,12 @@ class Fitter:
         return True
 
     def output(self, spacing=0):
-        _output = spacing*" " + f"Fit results:\n"
+        _output =  spacing*" " + f"Fitter:\n"
+        if self._use_lsqfit:
+            _output += spacing*" " + f"    lsqfit ({self._method})\n\n"
+        else:
+            _output += spacing*" " + f"    standard ({self._method})\n\n"
+        _output += spacing*" " + f"Fit results:\n"
         _output += spacing*" " + f"    chi2/dof [dof] = {round(self.chi2_dof, 2)} [{self.dof}]      Q = {round(self.Q, 3)}     AIC = {round(self.AIC, 3)}\n\n"
         '''
         if self.logGBF is None:
@@ -315,6 +353,13 @@ class Fitter:
     def params(self):
         if hasattr(self, '_params'):
             return self._params
+        else:
+            raise AttributeError("Cannot access params: fit not done yet!")
+
+    @property
+    def params_list(self):
+        if hasattr(self, '_params_list'):
+            return self._params_list
         else:
             raise AttributeError("Cannot access params: fit not done yet!")
 

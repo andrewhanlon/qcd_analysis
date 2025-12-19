@@ -115,7 +115,20 @@ def plot_effective_energies(plot_file, corrs, labels, dt=1, cosh=False, y_label=
     plt.close()
 
 
-def plot_effective_energy_with_fit(plot_file, corr, fitter, print_params={}, dt=1, cosh=False, y_label=r"$a E_{\rm eff} (t_{\rm sep})$"):
+def plot_effective_energy_with_fit(plot_file, corr, fitter, print_params={}, dt=1, cosh=False, y_label=r"$a E_{\rm eff} (t_{\rm sep})$", corr_index=0):
+    """
+    Args:
+        plot_file (str): the plot file to use
+        corr (c2pt_datatype.C2ptData): The data to use for the effective energy data points
+        fitter (fitting.Fitter): The fitter object (after a successful fit).
+        print_params (dict): A dictionary with the keys being the params to print (as known by the fitter) and the values are the latex you want
+                             used when priting the variable name
+        dt (int): the dt to use for the effective energy
+        cosh (bool): whether to use a cosh function for the effective energy
+        y_lable (str): the label to use for the y axis
+        corr_index (int): If you are doing simultaneous fits to multiple correlators, this index specifies which one to plot.
+    """
+
     fig, ax = plt.subplots()
     plt.xlabel(r"$t_{\rm sep}$")
     plt.ylabel(y_label)
@@ -142,15 +155,15 @@ def plot_effective_energy_with_fit(plot_file, corr, fitter, print_params={}, dt=
 
     plt.errorbar(x_vals, y_vals, yerr=y_errs, marker='o', color='k', capsize=2, capthick=.5, lw=.5, ls='none', markerfacecolor='none')
 
-    fitted_tseps = fitter.input_data.tseps
+    fitted_tseps = fitter.input_data.independent_variables_values[corr_index]
 
     x_vals = list(np.linspace(min(fitted_tseps), max(fitted_tseps), 500))
     mean_vals = list()
     upper_vals = list()
     lower_vals = list()
     for x in x_vals:
-        y = fitter.fit_function(x - dt/2., fitter.params)
-        y_dt = fitter.fit_function(x + dt/2., fitter.params)
+        y = fitter.fit_function.fit_functions[corr_index](x - dt/2., fitter.params_list)
+        y_dt = fitter.fit_function.fit_functions[corr_index](x + dt/2., fitter.params_list)
         data_eff_energy = (-1./dt)*np.log(y_dt/y)
 
         mean = data_eff_energy.mean
