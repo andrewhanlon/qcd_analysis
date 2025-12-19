@@ -356,7 +356,8 @@ class C2ptData(data_handler.DataType):
                 warnings.filterwarnings('error')
                 try:
                     if cosh:
-                        data_eff_energy = (-1./dt)*np.log(data_dt/data)
+                        print("cosh effective energy not implemented")
+                        sys.exit()
                     else:
                         data_eff_energy = (-1./dt)*np.log(data_dt/data)
                 except Warning as e:
