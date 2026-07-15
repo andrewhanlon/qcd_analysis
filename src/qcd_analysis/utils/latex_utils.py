@@ -3,6 +3,7 @@ import pylatex
 
 from qcd_analysis.plotting import c2pt_plotting
 from qcd_analysis.data_handling import c2pt_datatype
+from qcd_analysis.c2pt_datatype import EffEnergyType
 
 def create_spectrum_doc(pdf_dir, title, ):
     ...
@@ -139,17 +140,17 @@ def create_doc(title):
 
     return doc
 
-def add_correlator(doc, correlator, corr_filename, diagonal, latex_dir, plot_dir, dt=1, cosh=False):
+def add_correlator(doc, correlator, corr_filename, diagonal, latex_dir, plot_dir, dt=1, eff_energy_type=EffEnergyType.NORMAL):
 
     if diagonal:
         left_pdf_file = os.path.join(plot_dir, f"corr_{corr_filename}.pdf")
         right_pdf_file = os.path.join(plot_dir, f"eff_energy_{corr_filename}.pdf")
 
         c2pt_plotting.plot_correlator(left_pdf_file, correlator.real, True)
-        c2pt_plotting.plot_effective_energy(right_pdf_file, correlator.real, dt, cosh)
+        c2pt_plotting.plot_effective_energy(right_pdf_file, correlator.real, dt, eff_energy_type)
 
         left_estimates = correlator.real
-        right_estimates = correlator.real.get_effective_energy(dt, cosh)
+        right_estimates = correlator.real.get_effective_energy(dt, eff_energy_type)
 
     else:
         left_pdf_file = os.path.join(plot_dir, f"corr_{corr_filename}_real.pdf")

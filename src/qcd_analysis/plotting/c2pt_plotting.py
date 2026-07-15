@@ -6,6 +6,8 @@ import matplotlib.ticker
 import matplotlib.pyplot as plt
 import pickle
 
+from qcd_analysis.data_handling.c2pt_datatype import EffEnergyType
+
 hc = 6.62607015e-34 / 1.602176634e-19 / (2*np.pi) * 299792458 * 1e6 # exact: new SI
 
 def plot_correlator(plot_file, corr, logscale=True):
@@ -38,7 +40,7 @@ def plot_correlator(plot_file, corr, logscale=True):
     plt.close()
 
 
-def plot_effective_energy(plot_file, corr, dt=1, cosh=False, y_label=r"$a E_{\rm eff} (t_{\rm sep})$"):
+def plot_effective_energy(plot_file, corr, dt=1, eff_energy_type=EffEnergyType.NORMAL, y_label=r"$a E_{\rm eff} (t_{\rm sep})$"):
     fig, ax = plt.subplots()
     plt.xlabel(r"$t_{\rm sep}$")
     plt.ylabel(y_label)
@@ -47,21 +49,12 @@ def plot_effective_energy(plot_file, corr, dt=1, cosh=False, y_label=r"$a E_{\rm
     y_vals = list()
     y_errs = list()
 
-    eff_energy = corr.get_effective_energy(dt, cosh)
+    eff_energy = corr.get_effective_energy(dt, eff_energy_type)
 
-    for tsep in corr.tseps:
-        tsep_dt = tsep + dt
-        if tsep_dt not in corr.tseps:
-            continue
-
-        x_val = (tsep + tsep_dt)/2
-        if x_val not in eff_energy:
-            continue
-
-        data_eff_energy = eff_energy[x_val]
-        y_vals.append(data_eff_energy.mean)
-        y_errs.append(data_eff_energy.sdev)
-        x_vals.append(x_val)
+    for t, eff_energy_val in eff_energy.items():
+        y_vals.append(eff_energy_val.mean)
+        y_errs.append(eff_energy_val.sdev)
+        x_vals.append(t)
 
     plt.errorbar(x_vals, y_vals, yerr=y_errs, marker='o', color='k', capsize=2, capthick=.5, lw=.5, ls='none', markerfacecolor='none')
 
@@ -74,7 +67,7 @@ def plot_effective_energy(plot_file, corr, dt=1, cosh=False, y_label=r"$a E_{\rm
 
     plt.close()
 
-def plot_effective_energies(plot_file, corrs, labels, dt=1, cosh=False, y_label=r"$a E_{\rm eff} (t_{\rm sep})$"):
+def plot_effective_energies(plot_file, corrs, labels, dt=1, eff_energy_type=EffEnergyType.NORMAL, y_label=r"$a E_{\rm eff} (t_{\rm sep})$"):
     fig, ax = plt.subplots()
     plt.xlabel(r"$t_{\rm sep}$")
     plt.ylabel(y_label)
@@ -86,7 +79,7 @@ def plot_effective_energies(plot_file, corrs, labels, dt=1, cosh=False, y_label=
         y_vals = list()
         y_errs = list()
 
-        eff_energy = corr.get_effective_energy(dt, cosh)
+        eff_energy = corr.get_effective_energy(dt, eff_energy_type)
 
         for tsep in corr.tseps:
             tsep_dt = tsep + dt
@@ -115,7 +108,7 @@ def plot_effective_energies(plot_file, corrs, labels, dt=1, cosh=False, y_label=
     plt.close()
 
 
-def plot_effective_energy_with_fit(plot_file, corr, fitter, print_params={}, dt=1, cosh=False, y_label=r"$a E_{\rm eff} (t_{\rm sep})$", corr_index=0):
+def plot_effective_energy_with_fit(plot_file, corr, fitter, print_params={}, dt=1, eff_energy_type=EffEnergyType.NORMAL, y_label=r"$a E_{\rm eff} (t_{\rm sep})$", corr_index=0):
     """
     Args:
         plot_file (str): the plot file to use
@@ -124,7 +117,7 @@ def plot_effective_energy_with_fit(plot_file, corr, fitter, print_params={}, dt=
         print_params (dict): A dictionary with the keys being the params to print (as known by the fitter) and the values are the latex you want
                              used when priting the variable name
         dt (int): the dt to use for the effective energy
-        cosh (bool): whether to use a cosh function for the effective energy
+        eff_energy_type (c2pt_datatype.EffEnergyType): whether to use a normal, cosh, or sihn function for the effective energy
         y_lable (str): the label to use for the y axis
         corr_index (int): If you are doing simultaneous fits to multiple correlators, this index specifies which one to plot.
     """
@@ -137,7 +130,7 @@ def plot_effective_energy_with_fit(plot_file, corr, fitter, print_params={}, dt=
     y_vals = list()
     y_errs = list()
 
-    eff_energy = corr.get_effective_energy(dt, cosh)
+    eff_energy = corr.get_effective_energy(dt, eff_energy_type)
 
     for tsep in corr.tseps:
         tsep_dt = tsep + dt

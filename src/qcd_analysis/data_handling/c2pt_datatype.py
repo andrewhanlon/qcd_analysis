@@ -1,6 +1,7 @@
 import os
 import sys
 
+from enum import Enum
 import numpy as np
 import scipy.linalg
 import warnings
@@ -13,6 +14,21 @@ from qcd_analysis.models import c2pt_models
 ###################################################################################################
 #     C2ptData
 ###################################################################################################
+
+class EffEnergyType(Enum):
+    NORMAL = "normal"
+    COSH   = "cosh"
+    SINH   = "sinh"
+
+    @classmethod
+    def _missing_(cls, value):
+        # called only when the normal lookup fails
+        if isinstance(value, str):
+            key = value.strip().lower()
+            for member in cls:
+                if member.value == key:
+                    return member
+        return None   # fall through to ValueError
 
 class C2ptData(data_handler.DataType):
 
@@ -324,9 +340,9 @@ class C2ptData(data_handler.DataType):
 
         return estimates
 
-    def get_eff_energy_estimates(self, dt=1, cosh=False):
+    def get_eff_energy_estimates(self, dt=1, eff_energy_type=EffEnergyType.NORMAL):
         estimates = dict()
-        for tsep, eff_energy_tsep in self.get_effective_energy(dt, cosh).items():
+        for tsep, eff_energy_tsep in self.get_effective_energy(dt, eff_energy_type).items():
             estimates[tsep] = str(eff_energy_tsep)
 
         return estimates
@@ -335,30 +351,54 @@ class C2ptData(data_handler.DataType):
         for tsep, tsep_data in self.items():
             print(f"C({tsep}) = {tsep_data}")
 
-    def print_effective_energy(self, dt=1, cosh=False):
-        for tsep, tsep_data in self.get_effective_energy(dt, cosh).items():
+    def print_effective_energy(self, dt=1, eff_energy_type=EffEnergyType.NORMAL):
+        for tsep, tsep_data in self.get_effective_energy(dt, eff_energy_type).items():
             print(f"E_eff({tsep}) = {tsep_data}")
 
 
-    def get_effective_energy(self, dt=1, cosh=False):
+    def get_effective_energy(self, dt=1, eff_energy_type=EffEnergyType.NORMAL):
+        eff_energy_type = EffEnergyType(eff_energy_type)
         eff_energy = dict()
         for tsep in self.tseps:
-            tsep_dt = tsep + dt
-            if tsep_dt not in self.tseps:
-                continue
-
-            x_val = (tsep + tsep_dt)/2
-
-            data = self[tsep]
-            data_dt = self[tsep_dt]
-
             with warnings.catch_warnings():
                 warnings.filterwarnings('error')
                 try:
-                    if cosh:
-                        print("cosh effective energy not implemented")
-                        sys.exit()
+                    if eff_energy_type is EffEnergyType.COSH:
+                        tsep_dt = tsep + dt
+                        tsep_ndt = tsep - dt
+                        if tsep_dt not in self.tseps or tsep_ndt not in self.tseps:
+                            continue
+
+                        x_val = tsep
+
+                        data = self[tsep]
+                        data_dt = self[tsep_dt]
+                        data_ndt = self[tsep_ndt]
+                        data_eff_energy = (1./dt)*np.arccosh((data_dt + data_ndt)/(2.*data))
+
+                    elif eff_energy_type is EffEnergyType.SINH:
+                        tsep_dt = tsep + dt
+                        tsep_ndt = tsep - dt
+                        if tsep_dt not in self.tseps or tsep_ndt not in self.tseps:
+                            continue
+
+                        x_val = tsep
+
+                        data = self[tsep]
+                        data_dt = self[tsep_dt]
+                        data_ndt = self[tsep_ndt]
+                        data_eff_energy = (1./dt)*np.arcsinh((data_ndt - data_dt)/(2.*data))
+
                     else:
+                        tsep_dt = tsep + dt
+                        if tsep_dt not in self.tseps:
+                            continue
+
+                        x_val = (tsep + tsep_dt)/2
+
+                        data = self[tsep]
+                        data_dt = self[tsep_dt]
+
                         data_eff_energy = (-1./dt)*np.log(data_dt/data)
                 except Warning as e:
                     #print(f"Warning for tsep={tsep}: {e}")

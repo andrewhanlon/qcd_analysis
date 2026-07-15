@@ -234,6 +234,15 @@ class Data:
     def cosh(self):
         return Data(np.cosh(self.samples))
 
+    def sinh(self):
+        return Data(np.sinh(self.samples))
+
+    def arccosh(self):
+        return Data(np.arccosh(self.samples))
+
+    def arcsinh(self):
+        return Data(np.arcsinh(self.samples))
+
     def log(self):
         return Data(np.log(self.samples))
 
