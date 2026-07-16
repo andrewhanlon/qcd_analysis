@@ -42,7 +42,6 @@ def set_to_bootstrap(num_confs, rebin, num_samples, seed, skip=0):
             BOOTSTRAPS[samp_i,bin_i] = bin_i_map
 
     NUM_SAMPLES = BOOTSTRAPS.shape[0]
-    print(BOOTSTRAPS)
 
 def set_to_bootstrap_manual(bootstraps):
     global SAMPLING_MODE, NUM_SAMPLES, BOOTSTRAPS
