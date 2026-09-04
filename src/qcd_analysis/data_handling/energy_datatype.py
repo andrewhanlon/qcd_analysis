@@ -232,64 +232,79 @@ class EnergyData(data_handler.DataType):
     def current_mode(self):
         return self._current_mode
 
-    def set_current_mode(self, new_mode, **kwargs):
+
+    def set_current_mode(self, new_mode, non_int_energies=None, Ns=None, baryon_mass=None):
         '''
-            Things needed:
-                - Ns
-                - non_interacting
-                - masses for channels
+        Args:
+            new_mode(EnergyMode): the new type of energies 
+            non_int_energies (dict): {LittleGroupIrrep: list[tuple(data_handler.Data, data_handler.Data), ...]}
+            Ns (int):
+            baryon_mass (Data):
         '''
+
         if self.current_mode is EnergyMode.ELAB:
             if new_mode is EnergyMode.ECM:
-                for lg_irrep in self._input_energies.keys():
-                    self._current_energies[lg_irrep] = list()
-                    for elab in self._input_energies[lg_irrep]:
-                        ecm = c2pt_utils.boost_to_cm(elab, lg_irrep.Psq, kwargs['Ns'])
-                        self._current_energies[lg_irrep].append(ecm)
-
+                self._current_energies = elab_to_ecm(self._input_energies, Ns)
             elif new_mode is EnergyMode.ELAB_SHIFT:
-                for lg_irrep in self._input_energies.keys():
-                    self._current_energies[lg_irrep] = list()
-                    for elab, non_int in zip(self._input_energies[lg_irrep], non_interacting[lg_irrep]):
-                        elab_shift = elab - non_int
-                        self._current_energies[lg_irrep].append(elab_shift)
-
+                self._current_energies = elab_to_elabshift(self._input_energies, non_int_energies)    
             elif new_mode is EnergyMode.PSQ:
-                '''
-                for lg_irrep in self._input_energies.keys():
-                    self._current_energies[lg_irrep] = list()
-                    for elab in self._input_energies[lg_irrep]:
-                        ecm = c2pt_utils.boost_to_cm(elab, lg_irrep.Psq, Ns)
-                        psq_tuple = list()
-                '''
-
-                return NotImplementedError
-
+                self._current_energies = elab_to_psq(self._input_energies, Ns, baryon_mass)
             elif new_mode is EnergyMode.ELAB_SQUARED:
-                for lg_irrep in self._input_energies.keys():
-                    self._current_energies[lg_irrep] = list()
-                    for elab in self._input_energies[lg_irrep]:
-                        self._current_energies[lg_irrep].append(elab**2)
+                self._current_energies = elab_to_elabsq(self._input_energies)
             else:
-                return NotImplementedError
+                raise ValueError("Invalid option for new mode")
 
         elif self.current_mode is EnergyMode.ELAB_SHIFT:
-            if new_mode is EnergyMode.ECM:
-                free_energies = kwargs['free_energies']
-                for lg_irrep in self._input_energies.keys():
-                    self._current_energies[lg_irrep] = list()
-                    for elab_shift, free_energy in zip(self._input_energies[lg_irrep], free_energies[lg_irrep]):
-                        elab = elab_shift + free_energy
-                        ecm = c2pt_utils.boost_to_cm(elab, lg_irrep.Psq, kwargs['Ns'])
-                        self._current_energies[lg_irrep].append(ecm)
+            if new_mode is EnergyMode.ELAB:
+                self._current_energies = elabshift_to_elab(self._input_energies, non_int_energies)
+            elif new_mode is EnergyMode.ECM:
+                self._current_energies = elabshift_to_ecm(self._input_energies, Ns, non_int_energies)
+            elif new_mode is EnergyMode.PSQ:
+                self._current_energies = elabshift_to_psq(self._input_energies, baryon_mass, Ns, non_int_energies)
+            elif new_mode is EnergyMode.ELAB_SQUARED:
+                self._current_energies = elabshift_to_elabsq(self._input_energies, non_int_energies)
             else:
-                return NotImplementedError
+                raise ValueError("Invalid option for new mode")
 
+        elif self.current_mode is EnergyMode.ECM:
+            if new_mode is EnergyMode.ELAB:
+                self._current_energies = ecm_to_elab(self._input_energies, Ns)
+            elif new_mode is EnergyMode.ELAB_SHIFT:
+                self._current_energies = ecm_to_elabshift(self._input_energies, non_int_energies, Ns)
+            elif new_mode is EnergyMode.PSQ:
+                self._current_energies = ecm_to_psq(self._input_energies, baryon_mass)
+            elif new_mode is EnergyMode.ELAB_SQUARED:
+                self._current_energies = ecm_to_elabsq(self._input_energies, Ns)
+            else:
+                raise ValueError("Invalid option for new mode")
+
+        elif self.current_mode is EnergyMode.PSQ:
+            if new_mode is EnergyMode.ELAB:
+                self._current_energies = psq_to_elab(self._input_energies, Ns, baryon_mass)
+            elif new_mode is EnergyMode.ELAB_SHIFT:
+                self._current_energies = psq_to_elabshift(self._input_energies, non_int_energies, Ns, baryon_mass)
+            elif new_mode is EnergyMode.ECM:
+                self._current_energies = psq_to_ecm(self._input_energies, baryon_mass)
+            elif new_mode is EnergyMode.ELAB_SQUARED:
+                self._current_energies = psq_to_elabsq(self._input_energies, Ns, baryon_mass)
+            else:
+                raise ValueError("Invalid option for new mode")
+            
+        elif self.current_mode is EnergyMode.ELAB_SQUARED:
+            if new_mode is EnergyMode.ELAB:
+                self._current_energies = elabsq_to_elab(self._input_energies)
+            elif new_mode is EnergyMode.ELAB_SHIFT:
+                self._current_energies = elabsq_to_elabshift(self._input_energies, non_int_energies)
+            elif new_mode is EnergyMode.ECM:
+                self._current_energies = elabsq_to_ecm(self._input_energies, Ns)
+            elif new_mode is EnergyMode.PSQ:
+                self._current_energies = elabsq_to_psq(self._input_energies, Ns, baryon_mass)
+            else:
+                raise ValueError("Invalid option for new mode")
 
         else:
-            print("Error in 'MultiHadronEnergyData.set_current_mode'")
+            print("Error in 'EnergyData.set_current_mode'")
             sys.exit()
-
 
         self._current_mode = new_mode
 
@@ -355,3 +370,347 @@ class EnergyData(data_handler.DataType):
         fh.close()
 
 
+
+#############################################################
+#     CONVERSIONS
+#############################################################
+
+
+
+# dE_lab as input
+
+def elabshift_to_elab(input_energies, non_int_energies): 
+
+    converted_energies = dict()
+    for lg, energies in input_energies.items():
+        converted_energies[lg] = list()
+
+        for level in range(len(energies)):
+            non_int_energy_1 = non_int_energies[lg][level][0]
+            non_int_energy_2 = non_int_energies[lg][level][1]
+            elab_shift = input_energies[lg][level]
+
+            elab = elab_shift + non_int_energy_1 + non_int_energy_2
+            converted_energies[lg].append(elab)
+
+    return converted_energies
+
+
+def elabshift_to_ecm(input_energies, Ns, non_int_energies):
+
+    converted_input_energies = elabshift_to_elab(input_energies, non_int_energies)
+
+    converted_energies = dict()
+    for lg, energies in converted_input_energies.items():
+
+        converted_energies[lg] = list()
+
+        frame_psq = lg.Psq * ((2 * np.pi / Ns)**2)
+        for elab in energies:
+            ecm = np.sqrt(elab**2 - frame_psq)
+            converted_energies[lg].append(ecm)
+
+    return converted_energies
+
+
+def elabshift_to_psq(input_energies, baryon_mass, Ns, non_int_energies):
+
+    converted_input_energies = elabshift_to_ecm(input_energies, Ns, non_int_energies)
+
+    converted_energies = dict()
+    for lg, energies in converted_input_energies.items():
+
+        converted_energies[lg] = list()
+
+        for ecm in energies:
+            psq = (0.25 * (ecm**2)) - (baryon_mass**2)
+            converted_energies[lg].append(psq)
+            
+    return converted_energies
+
+
+def elabshift_to_elabsq(input_energies, non_int_energies):
+
+    converted_input_energies = elabshift_to_elab(input_energies, non_int_energies)
+    
+    converted_energies = dict()
+    for lg, energies in converted_input_energies.items():
+
+        converted_energies[lg] = list()
+
+        for elab in energies:
+            elabsq = elab**2
+            converted_energies[lg].append(elabsq)
+
+    return converted_energies
+
+
+
+
+# Elab as input 
+
+def elab_to_elabshift(input_energies, non_int_energies): 
+
+    converted_energies = dict()
+    for lg, energies in input_energies.items():
+        converted_energies[lg] = list() 
+
+        for level in range(len(energies)):
+            non_int_energy_1 = non_int_energies[lg][level][0]
+            non_int_energy_2 = non_int_energies[lg][level][1]
+            elab = input_energies[lg][level]
+
+            elab_shift = elab - non_int_energy_1 - non_int_energy_2
+            converted_energies[lg].append(elab_shift)
+
+    return converted_energies
+
+
+def elab_to_ecm(input_energies, Ns): 
+
+    converted_energies = dict()
+    for lg, energies in input_energies.items():
+
+        converted_energies[lg] = list()
+
+        frame_psq = lg.Psq * ((2 * np.pi / Ns)**2)
+        for elab in energies:
+            ecm = np.sqrt(elab**2 - frame_psq)
+            converted_energies[lg].append(ecm)
+
+    return converted_energies
+
+
+def elab_to_elabsq(input_energies): 
+
+    converted_energies = dict()
+    for lg, energies in input_energies.items():
+
+        converted_energies[lg] = list()
+        for elab in energies:
+            elabsq = elab**2
+            converted_energies[lg].append(elabsq)
+
+    return converted_energies
+
+
+def elab_to_psq(input_energies, Ns, baryon_mass):
+
+    converted_input_energies = elab_to_ecm(input_energies, Ns)
+
+    converted_energies = dict()
+    for lg, energies in converted_input_energies.items():
+
+        converted_energies[lg] = list()
+
+        for ecm in energies:
+            psq = (0.25 * (ecm**2)) - (baryon_mass**2)
+            converted_energies[lg].append(psq)
+
+    return converted_energies
+
+
+
+
+# ECM as input
+
+def ecm_to_elab(input_energies, Ns): 
+
+    converted_energies = dict()
+    for lg, energies in input_energies.items():
+
+        converted_energies[lg] = list()
+
+        frame_psq = lg.Psq * ((2 * np.pi / Ns)**2)
+        for ecm in energies:
+            elab = np.sqrt(ecm**2 + frame_psq)
+            converted_energies[lg].append(elab)
+
+    return converted_energies
+
+
+def ecm_to_elabsq(input_energies, Ns):
+
+    converted_input_energies = ecm_to_elab(input_energies, Ns)
+
+    converted_energies = dict()
+    for lg, energies in converted_input_energies.items():
+
+        converted_energies[lg] = list()
+        for elab in energies:
+            elabsq = elab**2
+            converted_energies[lg].append(elabsq)
+
+    return converted_energies
+
+
+def ecm_to_elabshift(input_energies, non_int_energies, Ns): 
+
+    converted_input_energies = ecm_to_elab(input_energies, Ns)
+
+    converted_energies = dict()
+    for lg, energies in converted_input_energies.items():
+        converted_energies[lg] = list()
+
+        for level in range(len(energies)):
+            non_int_energy_1 = non_int_energies[lg][level][0]
+            non_int_energy_2 = non_int_energies[lg][level][1]
+            elab = converted_input_energies[lg][level]
+
+            elab_shift = elab - non_int_energy_1 - non_int_energy_2
+            converted_energies[lg].append(elab_shift)
+
+    return converted_energies
+
+
+def ecm_to_psq(input_energies, baryon_mass):
+
+    converted_energies = dict()
+    for lg, energies in input_energies.items():
+
+        converted_energies[lg] = list()
+
+        for ecm in energies:
+            psq = (0.25 * (ecm**2)) - (baryon_mass**2)
+            converted_energies[lg].append(psq)
+
+    return converted_energies
+
+
+
+
+# psq as input
+
+def psq_to_ecm(input_energies, baryon_mass):
+
+    converted_energies = dict()
+    for lg, energies in input_energies.items():
+        converted_energies[lg] = list()
+
+        for psq in energies:
+            ecm = np.sqrt(4 * (psq + (baryon_mass**2)))
+            converted_energies[lg].append(ecm)
+
+    return converted_energies
+
+
+def psq_to_elab(input_energies, Ns, baryon_mass):
+
+    converted_input_energies = psq_to_ecm(input_energies, baryon_mass)
+
+    converted_energies = dict()
+    for lg, energies in converted_input_energies.items():
+
+        converted_energies[lg] = list()
+
+        frame_psq = lg.Psq * ((2 * np.pi / Ns)**2)
+        for ecm in energies:
+            elab = np.sqrt(ecm**2 + frame_psq)
+            converted_energies[lg].append(elab)
+
+    return converted_energies
+
+
+def psq_to_elabsq(input_energies, Ns, baryon_mass):
+
+    converted_input_energies = psq_to_elab(input_energies, Ns, baryon_mass)
+
+    converted_energies = dict()
+    for lg, energies in converted_input_energies.items():
+
+        converted_energies[lg] = list()
+
+        for elab in energies:
+            elabsq = elab**2
+            converted_energies[lg].append(elabsq)
+
+    return converted_energies
+
+
+def psq_to_elabshift(input_energies, non_int_energies, Ns, baryon_mass):
+
+    converted_input_energies = psq_to_elab(input_energies, Ns, baryon_mass)
+
+    converted_energies = dict()
+    for lg, energies in converted_input_energies.items():
+        converted_energies[lg] = list()
+
+        for level in range(len(energies)):
+            non_int_energy_1 = non_int_energies[lg][level][0] 
+            non_int_energy_2 = non_int_energies[lg][level][1]
+            elab = converted_input_energies[lg][level]
+
+            elab_shift = elab - non_int_energy_1 - non_int_energy_2
+            converted_energies[lg].append(elab_shift)
+
+    return converted_energies
+
+
+
+
+# Elab^2 as input
+
+def elabsq_to_elab(input_energies):
+
+    converted_energies = dict()
+    for lg, energies in input_energies.items():
+
+        converted_energies[lg] = list()
+
+        for elabsq in energies:
+            elab = np.sqrt(elabsq)
+            converted_energies[lg].append(elab)
+
+    return converted_energies
+
+
+def elabsq_to_elabshift(input_energies, non_int_energies):
+
+    converted_input_energies = elabsq_to_elab(input_energies)
+
+    converted_energies = dict()
+    for lg, energies in converted_input_energies.items():
+        converted_energies[lg] = list()
+
+        for level in range(len(energies)):
+            non_int_energy_1 = non_int_energies[lg][level][0]
+            non_int_energy_2 = non_int_energies[lg][level][1]
+            elab = converted_input_energies[lg][level]
+
+            elab_shift = elab - non_int_energy_1 - non_int_energy_2
+            converted_energies[lg].append(elab_shift)
+
+    return converted_energies
+
+
+def elabsq_to_ecm(input_energies, Ns):
+
+    converted_input_energies = elabsq_to_elab(input_energies)
+
+    converted_energies = dict()
+    for lg, energies in converted_input_energies.items():
+
+        converted_energies[lg] = list()
+
+        frame_psq = lg.Psq * ((2 * np.pi / Ns)**2)
+        for elab in energies:
+            ecm = np.sqrt(elab**2 - frame_psq)
+            converted_energies[lg].append(ecm)
+
+    return converted_energies
+
+
+def elabsq_to_psq(input_energies, Ns, baryon_mass):
+
+    converted_input_energies = elabsq_to_ecm(input_energies, Ns)
+
+    converted_energies = dict()
+    for lg, energies in converted_input_energies.items():
+
+        converted_energies[lg] = list()
+
+        for ecm in energies:
+            psq = (0.25 * (ecm**2)) - (baryon_mass**2)
+            converted_energies[lg].append(psq)
+
+    return converted_energies
