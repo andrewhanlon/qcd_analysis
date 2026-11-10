@@ -3,7 +3,7 @@ import pylatex
 
 from qcd_analysis.plotting import c2pt_plotting
 from qcd_analysis.data_handling import c2pt_datatype
-from qcd_analysis.c2pt_datatype import EffEnergyType
+from qcd_analysis.data_handling.c2pt_datatype import EffEnergyType
 
 def create_spectrum_doc(pdf_dir, title, ):
     ...

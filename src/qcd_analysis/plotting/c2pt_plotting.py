@@ -40,10 +40,11 @@ def plot_correlator(plot_file, corr, logscale=True):
     plt.close()
 
 
-def plot_effective_energy(plot_file, corr, dt=1, eff_energy_type=EffEnergyType.NORMAL, y_label=r"$a E_{\rm eff} (t_{\rm sep})$"):
+def plot_effective_energy(plot_file, corr, dt=1, eff_energy_type=EffEnergyType.NORMAL, y_label=r"$a E_{\rm eff} (t_{\rm sep})$", xmin=None, xmax=None, ymin=None, ymax=None):
     fig, ax = plt.subplots()
     plt.xlabel(r"$t_{\rm sep}$")
     plt.ylabel(y_label)
+    plt.axis([xmin, xmax, ymin, ymax])
 
     x_vals = list()
     y_vals = list()
