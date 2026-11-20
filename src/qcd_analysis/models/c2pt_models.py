@@ -337,14 +337,29 @@ class C2ptSingleHadronConspiracyModel(data_handler.FitFunction):
 
 
 class C2ptTwoHadronConspiracyModel(data_handler.FitFunction):
+    """Two-hadron conspiracy fit model.
 
-    def __init__(self, num_single_hadron_states, particles):
+    When ``relative_rp`` is False, every ``rp[n,m]`` parameter is
+    used directly as an independent coefficient, reproducing the
+    original model.
+
+    When ``relative_rp`` is True, ``rp[0,0]`` remains the reference
+    ground-state coefficient, while every excited ``rp[n,m]``
+    parameter is interpreted as a dimensionless ratio q[n,m], such
+    that
+
+        rp_coefficient[n,m] = rp[0,0] * q[n,m].
+
+    """
+
+    def __init__(self, num_single_hadron_states, particles, relative_rp=False):
         if particles[0] == particles[1] and num_single_hadron_states[0] != num_single_hadron_states[1]:
             print("If particles are equal, then they must have same number of states included")
             sys.exit()
 
         self.num_single_hadron_states = num_single_hadron_states
         self.particles = particles
+        self.relative_rp = relative_rp
 
     @property
     def fit_name(self):
@@ -354,6 +369,8 @@ class C2ptTwoHadronConspiracyModel(data_handler.FitFunction):
         else:
             return f"two-hadron-conspiracy_{self.num_single_hadron_states}-exp-single-hadron"
         '''
+        if self.relative_rp:
+            return "two-hadron-conspiracy-relative-rp"
         return f"two-hadron-conspiracy"
 
 
@@ -416,6 +433,7 @@ class C2ptTwoHadronConspiracyModel(data_handler.FitFunction):
     def function_prefactor(self, n, m, x, p):
         part1 = self.particles[0]
         part2 = self.particles[1]
+
         if n == 0:
             r1 = 1.
         else:
@@ -427,11 +445,16 @@ class C2ptTwoHadronConspiracyModel(data_handler.FitFunction):
             r2 = p[f'r({part2}){m}']
 
         if part1 == part2 and n < m:
-            fsub = p[f'rp{m},{n}']*np.exp(-p[f'dE{m},{n}']*x)*r1*r2
+            rp = p[f'rp{m},{n}']
+            dE = p[f'dE{m},{n}']
         else:
-            fsub = p[f'rp{n},{m}']*np.exp(-p[f'dE{n},{m}']*x)*r1*r2
+            rp = p[f'rp{n},{m}']
+            dE = p[f'dE{n},{m}']
 
-        return fsub
+        if self.relative_rp and (n != 0 or m != 0):
+            rp *= p['rp0,0']
+
+        return rp*np.exp(-dE*x)*r1*r2
 
     def function(self, x, p):
         part1 = self.particles[0]
@@ -462,6 +485,7 @@ class C2ptTwoHadronConspiracyModel(data_handler.FitFunction):
 
         part1 = self.particles[0]
         part2 = self.particles[1]
+        rp_excited_init = 1. if self.relative_rp else .1
 
         if part1 == part2:
             num_states = self.num_single_hadron_states[0]
@@ -475,7 +499,7 @@ class C2ptTwoHadronConspiracyModel(data_handler.FitFunction):
                 for m in range(n+1):
                     if n == m == 0:
                         continue
-                    init_guesses_dict[f'rp{n},{m}'] = .1
+                    init_guesses_dict[f'rp{n},{m}'] = rp_excited_init
 
         else:
             num_states1 = self.num_single_hadron_states[0]
@@ -490,7 +514,7 @@ class C2ptTwoHadronConspiracyModel(data_handler.FitFunction):
                 for m in range(num_states2):
                     if n == m == 0:
                         continue
-                    init_guesses_dict[f'rp{n},{m}'] = .1
+                    init_guesses_dict[f'rp{n},{m}'] = rp_excited_init
 
         return init_guesses_dict
 
