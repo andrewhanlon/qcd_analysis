@@ -385,7 +385,7 @@ class C2ptTwoHadronConspiracyModel(data_handler.FitFunction):
 
         else:
             num_states1 = self.num_single_hadron_states[0]
-            num_states2 = self.num_single_hadron_states[0]
+            num_states2 = self.num_single_hadron_states[1]
             for n in range(num_states1):
                 for m in range(num_states2):
                     _params.append(f'dE{n},{m}')
@@ -479,7 +479,7 @@ class C2ptTwoHadronConspiracyModel(data_handler.FitFunction):
 
         else:
             num_states1 = self.num_single_hadron_states[0]
-            num_states2 = self.num_single_hadron_states[0]
+            num_states2 = self.num_single_hadron_states[1]
             for n in range(num_states1):
                 for m in range(num_states2):
                     if n == m == 0:
@@ -522,7 +522,7 @@ class C2ptTwoHadronConspiracyModel(data_handler.FitFunction):
 
         else:
             num_states1 = self.num_single_hadron_states[0]
-            num_states2 = self.num_single_hadron_states[0]
+            num_states2 = self.num_single_hadron_states[1]
             for n in range(num_states1):
                 for m in range(num_states2):
                     if n == m == 0:
